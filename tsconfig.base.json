@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    // Imports name the .ts file, because node runs the .ts file — there is no
+    // build step to rewrite them.
+    "allowImportingTsExtensions": true,
+    // Node strips types, it does not compile them: syntax with runtime
+    // meaning (enums, namespaces, parameter properties) would survive
+    // stripping as something node cannot run. This makes tsc reject it.
+    "erasableSyntaxOnly": true,
+    // A type-only import must say so, since stripping cannot work out which
+    // imports were types and would leave a runtime import of nothing.
+    "verbatimModuleSyntax": true
+  }
+}

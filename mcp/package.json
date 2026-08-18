@@ -1,0 +1,20 @@
+{
+  "name": "api-test-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server exposing the api-test tool (collections, environments, send) to MCP clients",
+  "main": "server.ts",
+  "scripts": {
+    "start": "node server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "@types/node": "^22.10.0"
+  }
+}
