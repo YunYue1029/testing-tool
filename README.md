@@ -1,4 +1,4 @@
-# API Test
+# Testing Tool
 
 A lightweight, self-hosted, Postman-like tool for testing HTTP APIs — runs in the
 browser, straight from Node.js.
@@ -80,8 +80,8 @@ Requires Node.js 22.18+ — the sources are TypeScript and are run directly,
 relying on node's built-in type stripping rather than a build step.
 
 ```bash
-npm run install:all   # install server + client deps
-npm run dev           # server on :3000, Vite dev server on :5173
+npm run install:all   # install server + client + MCP deps
+npm run dev           # server on :3000, Vite on :5173, MCP on :8765
 ```
 
 Open <http://localhost:5173> for development (it proxies `/api` to the server).
@@ -147,7 +147,7 @@ the URL — one endpoint, nothing to launch per session:
 ```json
 {
   "mcpServers": {
-    "api-test": {
+    "testing-tool": {
       "type": "http",
       "url": "http://localhost:8765/mcp"
     }
@@ -166,7 +166,8 @@ Notes:
   the LAN.
 - Requests carrying a browser `Origin` other than localhost are refused, so a web
   page you happen to have open cannot drive the tools over your loopback.
-- `API_TEST_URL` points it at the backend (default `http://localhost:3000`).
+- `TESTING_TOOL_URL` points it at the backend (default `http://localhost:3000`).
+  The old `API_TEST_URL` is still read as a fallback.
 
 ### Alternative: stdio
 
@@ -176,14 +177,15 @@ running — give it the absolute path to `mcp/server.ts`:
 ```json
 {
   "mcpServers": {
-    "api-test": {
+    "testing-tool": {
       "command": "node",
-      "args": ["/absolute/path/to/api_test/mcp/server.ts"]
+      "args": ["/absolute/path/to/testing-tool/mcp/server.ts"]
     }
   }
 }
 ```
 
-Install its deps once with `npm --prefix mcp install`. The backend still has to
-be running either way — this server is only a client of it.
+Its deps come with `npm run install:all`; `npm --prefix mcp install` installs
+them on their own. The backend still has to be running either way — this server
+is only a client of it.
 

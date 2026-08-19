@@ -387,7 +387,11 @@ app.get('/api/rev', (req, res) => res.json(revision));
 // ---- Export / import everything (moving this workspace to another machine) ----
 // One file carries collections, environments, flows and the saved base URLs in
 // their stored shape — no conversion, so nothing is lost on the way out or in.
-const WORKSPACE_FORMAT = 'api-test/workspace';
+const WORKSPACE_FORMAT = 'testing-tool/workspace';
+// What the tool wrote under its old name. Files already exported carry it, and
+// they are exactly the workspaces someone is moving between machines, so import
+// keeps accepting it — only export stops producing it.
+const LEGACY_WORKSPACE_FORMAT = 'api-test/workspace';
 
 // The sidebar's two halves, plus the context both of them resolve against.
 // Sections, not stores, because the things that have to travel together do:
@@ -469,9 +473,9 @@ interface Upsertable<T> {
 // alone without its collections landing on top of the ones here.
 app.post('/api/import/workspace', asyncH(async (req, res) => {
   const data = req.body || {};
-  if (data.format !== WORKSPACE_FORMAT) {
+  if (data.format !== WORKSPACE_FORMAT && data.format !== LEGACY_WORKSPACE_FORMAT) {
     return res.status(400).json({
-      error: 'Not an api-test export file',
+      error: 'Not a testing-tool export file',
       hint: 'Export from the other machine with the export button, or use a Postman v2.x export instead.',
     });
   }
@@ -633,7 +637,7 @@ ensureDirs().then(async () => {
   }
 
   app.listen(PORT as number, HOST, () => {
-    console.log(`api-test server listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+    console.log(`testing-tool server listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
     console.log(`data directory: ${DATA_DIR}`);
   });
   // Uploads outlive the requests that referenced them; clear the strays at

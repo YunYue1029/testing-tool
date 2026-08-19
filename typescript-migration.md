@@ -7,7 +7,7 @@
 > why things are arranged the way they are. The "Deferred decisions" at the end
 > are still open.
 
-Plan for converting the api-test tool (self-hosted Postman replacement:
+Plan for converting testing-tool (self-hosted Postman replacement:
 Express server + React/Vite client + MCP server) from JavaScript to TypeScript.
 
 Written against the codebase as of 2026-08-18. Line counts below are from that

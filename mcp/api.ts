@@ -1,5 +1,7 @@
-// Thin HTTP client for the api-test backend (server/index.ts).
-// Base URL comes from API_TEST_URL (default http://localhost:3000).
+// Thin HTTP client for the testing-tool backend (server/index.ts).
+// Base URL comes from TESTING_TOOL_URL (default http://localhost:3000).
+// API_TEST_URL is the pre-rename name, still read so existing shells and
+// client configs keep working.
 //
 // The domain types come from the server itself rather than a copy kept here:
 // this client speaks that API, and a second definition of Collection would only
@@ -10,7 +12,9 @@ import type {
   FlowReport, Folder, HttpRunResult, Overrides, SavedRequest, ShellRunResult, Vars,
 } from '../server/types.ts';
 
-const BASE = (process.env.API_TEST_URL || 'http://localhost:3000').replace(/\/+$/, '');
+const BASE = (
+  process.env.TESTING_TOOL_URL || process.env.API_TEST_URL || 'http://localhost:3000'
+).replace(/\/+$/, '');
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
@@ -23,7 +27,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   } catch (err) {
     const cause = (err as { cause?: { code?: string } }).cause || {};
     throw new Error(
-      `Cannot reach the api-test backend at ${BASE} (${cause.code || (err as Error).message}). ` +
+      `Cannot reach the testing-tool backend at ${BASE} (${cause.code || (err as Error).message}). ` +
       'Is it running?  (npm run dev  or  npm start)'
     );
   }

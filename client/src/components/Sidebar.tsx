@@ -40,8 +40,8 @@ interface SidebarProps {
 
 // A drag carrying a flow says so in its own type, so a drop target can tell one
 // from a file dragged in off the desktop before it lights up.
-const FLOW_DRAG_TYPE = 'application/x-api-test-flow';
-const REQUEST_DRAG_TYPE = 'application/x-api-test-request';
+const FLOW_DRAG_TYPE = 'application/x-testing-tool-flow';
+const REQUEST_DRAG_TYPE = 'application/x-testing-tool-request';
 
 // What a row shows of where a request points: its url, or for a shell test
 // the command, which is the only thing it has.
@@ -421,10 +421,10 @@ export default function Sidebar({
     <aside className="sidebar">
       <div className="brand">
         <span className="brand-mark" />
-        <span className="brand-name">API&nbsp;Test</span>
+        <span className="brand-name">Testing&nbsp;Tool</span>
         <button
           className="mini brand-act"
-          title="Import — an api-test export file, or a Postman collection/environment (v2.x JSON)"
+          title="Import — a testing-tool export file, or a Postman collection/environment (v2.x JSON)"
           onClick={() => fileRef.current?.click()}
         ><IconImport /></button>
         <button

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// MCP server for the api-test tool. Talks to the api-test HTTP backend and
+// MCP server for testing-tool. Talks to the testing-tool HTTP backend and
 // exposes collections / environments / send as MCP tools.
 //
 // Two transports:
@@ -165,7 +165,7 @@ function shapeResponse(r: HttpResponse | ShellResponse) {
 
 // Usage conventions, delivered to every client via the MCP `instructions`
 // field on initialize — so no client-side setup or docs are needed.
-const INSTRUCTIONS = `api-test: a self-hosted Postman replacement for testing an API/CRUD backend
+const INSTRUCTIONS = `testing-tool: a self-hosted Postman replacement for testing an API/CRUD backend
 under development. Requests are organised as collection -> folders -> requests.
 
 {{dy_url}} — dynamic URLs from folder structure (use this well):
@@ -300,7 +300,7 @@ Rules:
 // Build a fresh MCP server with all tools registered. A factory (rather than a
 // singleton) so HTTP mode can create one server per session.
 function createServer() {
-  const server = new McpServer({ name: 'api-test', version: '1.0.0' }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: 'testing-tool', version: '1.0.0' }, { instructions: INSTRUCTIONS });
 
   // Register a tool with uniform error handling. The handler's argument type
   // is inferred from the tool's own `inputSchema`, so the zod shape below each
@@ -475,7 +475,7 @@ function createServer() {
   tool('send_request', {
     title: 'Send an HTTP request',
     description:
-      'Send an ad-hoc HTTP request through the api-test backend (no browser CORS in the way). ' +
+      'Send an ad-hoc HTTP request through the testing-tool backend (no browser CORS in the way). ' +
       '{{vars}} in url/headers/body are resolved from the given environment.',
     inputSchema: {
       method: z.string(),
@@ -1247,7 +1247,7 @@ function startHttp(port: number): void {
   const host = process.env.MCP_HTTP_HOST || '127.0.0.1';
   httpServer.listen(port, host, () => {
     const shown = host === '0.0.0.0' ? 'localhost' : host;
-    console.error(`api-test MCP (HTTP) ready on http://${shown}:${port}/mcp (backend: ${api.base})`);
+    console.error(`testing-tool MCP (HTTP) ready on http://${shown}:${port}/mcp (backend: ${api.base})`);
   });
 }
 
@@ -1258,5 +1258,5 @@ if (httpPort) {
   const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`api-test MCP server ready over stdio (backend: ${api.base})`);
+  console.error(`testing-tool MCP server ready over stdio (backend: ${api.base})`);
 }

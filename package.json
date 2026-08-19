@@ -1,5 +1,5 @@
 {
-  "name": "api-test",
+  "name": "testing-tool",
   "version": "1.0.0",
   "description": "A Postman-like web tool for testing HTTP APIs (TypeScript)",
   "private": true,

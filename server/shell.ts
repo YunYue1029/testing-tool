@@ -128,7 +128,8 @@ const SESSIONS_SUPPORTED = process.platform !== 'win32';
 // Overridable because a session is where the difference between sh and bash
 // starts to matter: `source`, arrays and [[ ]] are bash, and a flow that leans
 // on them wants to say so once rather than per step.
-const SESSION_SHELL = process.env.API_TEST_SHELL || '/bin/sh';
+// API_TEST_SHELL is the pre-rename name, still read so existing setups keep working.
+const SESSION_SHELL = process.env.TESTING_TOOL_SHELL || process.env.API_TEST_SHELL || '/bin/sh';
 
 // Wrap a string so the shell reads it as one literal word.
 function shq(s: string): string {
@@ -186,7 +187,7 @@ class ShellSession {
   // is written straight after, and a shell that could not start reports through
   // the same path a command that died does.
   spawnShell(): ShellChild {
-    this.mark = `__api_test_${crypto.randomBytes(9).toString('hex')}__`;
+    this.mark = `__testing_tool_${crypto.randomBytes(9).toString('hex')}__`;
     // Its own process group, so a timeout can take down what the command
     // started as well as the command — a wedged grandchild otherwise keeps the
     // port the step was testing.
@@ -259,7 +260,7 @@ class ShellSession {
       this.fail(new CommandError(
         `The command could not be run: ${err.code || err.message}`,
         err.code === 'ENOENT'
-          ? `No shell at ${this.shellPath} — set API_TEST_SHELL to one that exists.`
+          ? `No shell at ${this.shellPath} — set TESTING_TOOL_SHELL to one that exists.`
           : undefined,
       ));
       return;

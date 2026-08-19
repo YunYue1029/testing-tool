@@ -33,7 +33,7 @@ interface FlowPanelProps {
 
 // Its own type, like the sidebar's two: it says a dragover is one of ours, and
 // keeps a file dragged in from the desktop from looking like a step.
-const STEP_DRAG_TYPE = 'application/x-api-test-step';
+const STEP_DRAG_TYPE = 'application/x-testing-tool-step';
 
 function emptyStep(): Step {
   return {

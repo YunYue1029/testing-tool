@@ -12,7 +12,7 @@ import path from 'node:path';
 // store.ts resolves DATA_DIR when it is first loaded, so point it at a scratch
 // directory first. node:test runs each file in its own process, so this cannot
 // leak into another test file.
-const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'api-test-shell-'));
+const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'testing-tool-shell-'));
 process.env.DATA_DIR = DATA_DIR;
 
 // ESM hoists every static import above this file's own statements, so the

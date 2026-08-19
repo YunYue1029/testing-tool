@@ -551,7 +551,7 @@ export default function App() {
       // The scope in the name: three files in a downloads folder are otherwise
       // told apart only by opening them.
       const scope = include.length === 3 ? '' : `-${include.join('-')}`;
-      a.download = `api-test${scope}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `testing-tool${scope}-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -625,7 +625,9 @@ export default function App() {
 
   // The import button takes either format; which one it is, is in the file.
   function importFile(data: Record<string, unknown>) {
-    if (data && data.format === 'api-test/workspace') return importWorkspace(data);
+    if (data && (data.format === 'testing-tool/workspace' || data.format === 'api-test/workspace')) {
+      return importWorkspace(data);
+    }
     return importPostman(data);
   }
 
