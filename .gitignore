@@ -1,6 +1,9 @@
 node_modules
 client/node_modules
 client/dist
+# The client is the only frontend; a build at the root is stray output, not
+# something to commit.
+/dist/
 # Local working data. Saved base URLs in particular tend to name internal
 # hosts, and none of it is anyone else's business.
 data/collections/*.json
