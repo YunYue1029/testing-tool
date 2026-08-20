@@ -254,10 +254,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 }
 .flow-name { flex: 1; font-size: 14px; font-weight: 600; }
 /* Reads as a subtitle, not a form field: no border until you go near it, and
-   indented to sit under the name rather than under the caret beside it. */
+   indented to sit under the name rather than under the caret beside it.
+   It grows with its text (see fitToContent), but only to six lines — past
+   that a long note would push the steps off the panel, so it stops there
+   and scrolls within itself instead. */
 .flow-description {
   flex: 0 0 auto; width: calc(100% - 26px); margin: -6px 0 12px 26px;
-  padding: 2px 0; resize: none; overflow: hidden;
+  padding: 2px 0; resize: none; overflow-y: auto;
+  max-height: calc(1.5em * 6 + 4px);
   background: transparent; border: none; border-radius: 0;
   color: var(--muted); font-size: 12.5px; line-height: 1.5;
 }

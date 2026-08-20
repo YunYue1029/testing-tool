@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { IconPlus, IconClose, IconPencil, IconPlay } from './Icons';
 import AddStepModal from './AddStepModal';
 import StepEditModal from './StepEditModal';
@@ -267,6 +267,13 @@ export default function FlowPanel({
   // A new run answers different questions than the last one did.
   useEffect(() => { setRespOpen({}); }, [report]);
 
+  // The description sizes itself to its text, but the ref callback below only
+  // fires on mount — switching flows reuses the same textarea, so without this
+  // a short description would keep the height the last flow's long one left
+  // behind, and an empty one would open as a block of blank.
+  const descRef = useRef<HTMLTextAreaElement | null>(null);
+  useLayoutEffect(() => { fitToContent(descRef.current); }, [flow.id, flow.description]);
+
   const setStep = (id: string, patch: Partial<Step>) => onChange({
     ...flow,
     steps: flow.steps.map((s) => (s.id === id ? { ...s, ...patch } : s)),
@@ -492,7 +499,7 @@ export default function FlowPanel({
         value={flow.description || ''}
         placeholder="What this flow proves — the case it covers, and anything it assumes"
         rows={1}
-        ref={fitToContent}
+        ref={descRef}
         onChange={(e) => {
           fitToContent(e.target);
           onChange({ ...flow, description: e.target.value });
