@@ -265,12 +265,33 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   background: transparent; border: none; border-radius: 0;
   color: var(--muted); font-size: 12.5px; line-height: 1.5;
 }
+/* The caret sits in the 26px gutter the description is indented by, directly
+   under the one on the flow head — the two folds line up because they are the
+   same gesture on two different things. */
+.flow-desc { position: relative; flex: 0 0 auto; }
+.desc-caret {
+  position: absolute; left: 4px; top: 3px; padding: 0;
+  background: none; border: none; color: var(--muted); cursor: pointer;
+}
+.desc-caret:hover { color: var(--text); }
+/* Folded: one line, ending in an ellipsis so it is clear something was cut.
+   Newlines collapse to spaces here, which is what puts the second sentence in
+   view rather than the tail of the first. */
+.flow-description.collapsed {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer;
+}
+.flow-description.collapsed:hover { color: var(--text); }
 .flow-description::placeholder { color: var(--muted); opacity: .5; }
 .flow-description:hover::placeholder { opacity: .75; }
 .flow-description:focus { color: var(--text); }
 /* min-height: 0 or the flex item refuses to shrink and the panel scrolls whole. */
 .flow-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 4px; }
+/* One line: the verdict, what it took, and the way out to a report. A row
+   rather than flowing text, so the button keeps the far edge instead of
+   trailing whatever the sentence ends on. */
 .flow-summary {
+  display: flex; align-items: center; gap: 4px;
   padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 12.5px;
   flex: 0 0 auto;
 }

@@ -296,7 +296,23 @@ export default function FlowPanel({
   // a short description would keep the height the last flow's long one left
   // behind, and an empty one would open as a block of blank.
   const descRef = useRef<HTMLTextAreaElement | null>(null);
-  useLayoutEffect(() => { fitToContent(descRef.current); }, [flow.id, flow.description]);
+  const [descOpen, setDescOpen] = useState(false);
+  const hasDesc = !!(flow.description || '').trim();
+  // A new flow starts folded, whatever the last one was left at: the fold is
+  // there to keep the steps in view, and arriving somewhere new is when that
+  // matters most.
+  useEffect(() => { setDescOpen(false); }, [flow.id]);
+  useLayoutEffect(() => {
+    fitToContent(descRef.current);
+  }, [flow.id, flow.description, descOpen]);
+
+  // Unfolding by clicking the line puts the cursor in it. It is an editable
+  // field either way, and a click on text you can type into that leaves you
+  // unable to type is its own small puzzle.
+  function openDesc() {
+    setDescOpen(true);
+    requestAnimationFrame(() => descRef.current?.focus());
+  }
 
   const setStep = (id: string, patch: Partial<Step>) => onChange({
     ...flow,
@@ -517,18 +533,42 @@ export default function FlowPanel({
           it was written, usually by someone deciding whether it is the one that
           covers the thing they just broke — and a name has no room to answer
           that. Empty it stays one quiet line, so a flow that needs no note is
-          not made to carry one. */}
-      <textarea
-        className="flow-description"
-        value={flow.description || ''}
-        placeholder="What this flow proves — the case it covers, and anything it assumes"
-        rows={1}
-        ref={descRef}
-        onChange={(e) => {
-          fitToContent(e.target);
-          onChange({ ...flow, description: e.target.value });
-        }}
-      />
+          not made to carry one.
+
+          Folded to a single line until asked for. The steps are what the panel
+          is for, and a description written to answer "is this the one?" answers
+          it in its first few words — the rest is for the reader who has decided
+          it is. Collapsed it is a div rather than the textarea, because that is
+          the only way to end a clipped line in an ellipsis and so admit there
+          is more. */}
+      <div className="flow-desc">
+        {hasDesc && (
+          <button
+            className={`caret desc-caret ${descOpen ? 'open' : ''}`}
+            title={descOpen ? 'Fold the description back to one line' : 'Read the whole description'}
+            onClick={() => setDescOpen((open) => !open)}
+          >▸</button>
+        )}
+        {hasDesc && !descOpen ? (
+          <div
+            className="flow-description collapsed"
+            title="Read the whole description"
+            onClick={openDesc}
+          >{flow.description}</div>
+        ) : (
+          <textarea
+            className="flow-description"
+            value={flow.description || ''}
+            placeholder="What this flow proves — the case it covers, and anything it assumes"
+            rows={1}
+            ref={descRef}
+            onChange={(e) => {
+              fitToContent(e.target);
+              onChange({ ...flow, description: e.target.value });
+            }}
+          />
+        )}
+      </div>
 
       {/* Only once there is a command to run: a flow of pure HTTP has no shell,
           and a row asking about one would be a setting for nothing. */}
@@ -569,13 +609,11 @@ export default function FlowPanel({
               ? 'Nothing to run — this flow has no steps yet'
               : report.ok ? '✓ All steps passed' : '✗ Flow failed'}
           <span className="hint-inline"> · {report.durationMs} ms</span>
-          {Object.keys(report.vars || {}).length > 0 && (
-            <span className="hint-inline">
-              {' '}· captured: {Object.entries(report.vars).map(([k, v]) => `${k}=${String(v).slice(0, 20)}`).join(', ')}
-            </span>
-          )}
-          {/* Lives on the summary rather than up with Run: there is nothing to
-              report until a run has happened, and this bar is the run. */}
+          {/* The verdict and what it took, and nothing else: what a run
+              captured is on each step's own row, and in the report in full —
+              listing a dozen tokens here only wrapped the bar onto four lines.
+              The button lives on this bar rather than up with Run because
+              there is nothing to report until a run has happened. */}
           <button
             className="btn-secondary report-export"
             title="Write this run up as a report — print it to PDF and send it on"
