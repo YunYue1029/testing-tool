@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { RequestOptions } from './AddStepModal';
 import RequestAuthEditor from './RequestAuthEditor';
-import { emptyInlineRequest, METHODS, fitToContent } from '../util';
+import {
+  emptyInlineRequest, METHODS, fitToContent, isShellTest, copyableBody, withBodyOverride,
+} from '../util';
 import type {
   Assertion, AssertOp, Collection, InlineBodyType, InlineRequest, Row, Step,
   StepMode, ValueSource,
@@ -86,6 +88,9 @@ export default function StepEditModal(
     : null;
   const shell = step.mode === 'shell';
   const savedShell = !!(picked && picked.kind === 'shell');
+  // The saved request this step points at, when that request is an HTTP one:
+  // the body below is copied off it, and a shell test has no body to copy.
+  const savedHttp = picked && !isShellTest(picked) ? picked : null;
   // Whether this step ends up with a command's result to read, whichever way it
   // got there — that is what the extract and assert rows below ask about.
   const readsShell = shell || savedShell;
@@ -93,6 +98,23 @@ export default function StepEditModal(
   const req = step.request || emptyInlineRequest();
 
   const set = (patch: Partial<Step>) => onChange({ ...step, ...patch });
+
+  // Copy the saved request's body onto the step — when a request is picked, and
+  // again every time this dialog is opened. A step borrows the request's frame
+  // (url, headers, auth, and any later fix to them) but sends a body of its own,
+  // so that trying something out under Tests does not rewrite what every flow
+  // pointing at that request sends. Between two openings the copy holds still;
+  // opening the step is the moment that says "I am looking at this now", and
+  // taking the copy again there keeps it in step without the flow having to
+  // watch Tests for changes.
+  useEffect(() => {
+    const body = copyableBody(picked);
+    if (body === step.overrides?.body) return;
+    set({ overrides: withBodyOverride(step.overrides, body) });
+    // Deliberately not `picked`: the collections refetch on every save, and a
+    // new object each time would turn the copy back into following.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step.mode, step.collectionId, step.requestId]);
   // Patch the request typed into a step, filling in the defaults for a step
   // saved before inline requests existed.
   const setInline = (patch: Partial<InlineRequest>) =>
@@ -187,6 +209,30 @@ export default function StepEditModal(
         {savedShell && (
           <div className="step-shell-cmd" title="Edit it where it is saved, under Tests">
             <code>{picked.command || '(no command yet)'}</code>
+          </div>
+        )}
+
+        {/* The body this step will actually send: its own copy of the request's,
+            taken when the request was picked and taken again whenever this
+            dialog is opened. Shown rather than offered for editing, exactly as
+            the command above is — the body is written under Tests, and one body
+            in two places is one too many. What the copy buys is that trying
+            something out there does not rewrite every flow that points at it. */}
+        {savedHttp && step.overrides?.body != null && (
+          <div
+            className="step-shell-cmd step-body-copy"
+            title="This step's own copy, taken from the saved request each time you open this dialog. Edit the body where it is saved, under Tests."
+          >
+            <code>{step.overrides.body || '(empty body)'}</code>
+          </div>
+        )}
+
+        {/* A multipart form has no single string to copy, so it stays the
+            request's — worth saying, since every other saved step here does
+            carry a copy. */}
+        {savedHttp && savedHttp.bodyType === 'form' && (
+          <div className="step-body-follows">
+            Sends the request’s form fields as they stand under Tests.
           </div>
         )}
 

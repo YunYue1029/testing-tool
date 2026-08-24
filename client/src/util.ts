@@ -1,7 +1,7 @@
 import type { Folder } from './types.ts';
 import type {
   Auth, AuthDescription, AuthForm, AuthType, Collection, CollectionAuth,
-  FormRow, HeaderPair, HttpRequest, InlineRequest, RequestBody, Row,
+  FormRow, HeaderPair, HttpRequest, InlineRequest, Overrides, RequestBody, Row,
   SavedRequest, ShellRequest, Vars,
 } from './types.ts';
 
@@ -218,6 +218,32 @@ export function normalizeRequest(r: SavedRequest): SavedRequest {
 export function activeBody(request: HttpRequest): RequestBody | undefined {
   return (request.bodies || []).find((b) => b.id === request.activeBodyId)
     || (request.bodies || [])[0];
+}
+
+// The body a flow step takes a copy of when it points at a saved request. A
+// flow borrows the request's frame — its url, headers and auth, and any later
+// fix to them — but the payload is the case the flow is making, so the step
+// carries its own: editing a request under Tests to try something must not
+// quietly rewrite what every flow using it sends. A form body has no single
+// string to copy (the override would replace the multipart fields with a plain
+// body) and 'none' has nothing to copy, so both keep following the request.
+export function copyableBody(request: SavedRequest | null | undefined): string | undefined {
+  if (!request || request.kind === 'shell') return undefined;
+  const type = request.bodyType || 'none';
+  if (type === 'none' || type === 'form') return undefined;
+  return activeBody(request)?.content || '';
+}
+
+// Overrides with the copied body set, or with it dropped when there is nothing
+// to copy. An overrides object with nothing left in it is stored as none at
+// all, so a step that overrides nothing reads as one.
+export function withBodyOverride(
+  overrides: Overrides | undefined, body: string | undefined,
+): Overrides | undefined {
+  const next: Overrides = { ...overrides };
+  if (body == null) delete next.body;
+  else next.body = body;
+  return Object.keys(next).length ? next : undefined;
 }
 
 export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];

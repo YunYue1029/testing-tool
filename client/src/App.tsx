@@ -830,6 +830,9 @@ export default function App() {
             running={flowRunning}
             runningStep={runningStep}
             report={flowReport}
+            environmentName={
+              (environments.find((e) => e.id === activeEnvId) || {}).name || null
+            }
           />
         ) : isShellTest(request) ? (
           <>

@@ -1,7 +1,10 @@
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { IconPlus, IconClose, IconPencil, IconPlay } from './Icons';
 import AddStepModal from './AddStepModal';
 import StepEditModal from './StepEditModal';
+import FlowReportModal from './FlowReportModal';
+import FlowReportDoc from './FlowReportDoc';
 import { uid, prettify, fmtSize, emptyInlineRequest, fitToContent } from '../util';
 import type {
   Collection, Flow, FlowShell, InlineRequest, Step, StepReport,
@@ -17,6 +20,9 @@ interface PanelReport {
   vars: Record<string, string>;
   error?: string;
   oneStep?: string;
+  // When the run started, as the server stamped it. Only the printed report
+  // asks — on screen the run you are looking at is the one that just happened.
+  startedAt?: string;
 }
 
 interface FlowPanelProps {
@@ -29,6 +35,9 @@ interface FlowPanelProps {
   running: boolean;
   runningStep: string | null;
   report: PanelReport | null;
+  // Which environment the run resolved its {{vars}} against. Only the printed
+  // report asks — a reader who was not here cannot tell staging from local.
+  environmentName: string | null;
 }
 
 // Its own type, like the sidebar's two: it says a dragover is one of ours, and
@@ -257,6 +266,7 @@ function StepResponse({ rep }: { rep: StepReport }) {
 // hands to the next and the checks on what came back.
 export default function FlowPanel({
   flow, collections, onChange, onRun, onRunStep, onDelete, running, runningStep, report,
+  environmentName,
 }: FlowPanelProps) {
   const [openStep, setOpenStep] = useState<string | null>(null); // step id whose detail is expanded
   const [adding, setAdding] = useState(false); // the "add step" dialog is up
@@ -266,6 +276,20 @@ export default function FlowPanel({
   const [respOpen, setRespOpen] = useState<Record<string, boolean>>({});
   // A new run answers different questions than the last one did.
   useEffect(() => { setRespOpen({}); }, [report]);
+
+  // Writing the run up for someone who was not here. The dialog asks one
+  // question (whether to print the secrets the run used); answering it mounts
+  // the document and hands the page to the browser's print dialog, where
+  // "Save as PDF" makes the file you send on.
+  const [exporting, setExporting] = useState(false);
+  const [printing, setPrinting] = useState<{ reveal: boolean } | null>(null);
+  // Print from an effect rather than from the click: the document has to be in
+  // the page before the print dialog reads it, and the click is a frame early.
+  useEffect(() => {
+    if (!printing) return undefined;
+    const t = window.setTimeout(() => { window.print(); setPrinting(null); }, 0);
+    return () => window.clearTimeout(t);
+  }, [printing]);
 
   // The description sizes itself to its text, but the ref callback below only
   // fires on mount — switching flows reuses the same textarea, so without this
@@ -550,7 +574,33 @@ export default function FlowPanel({
               {' '}· captured: {Object.entries(report.vars).map(([k, v]) => `${k}=${String(v).slice(0, 20)}`).join(', ')}
             </span>
           )}
+          {/* Lives on the summary rather than up with Run: there is nothing to
+              report until a run has happened, and this bar is the run. */}
+          <button
+            className="btn-secondary report-export"
+            title="Write this run up as a report — print it to PDF and send it on"
+            onClick={() => setExporting(true)}
+          >Export report</button>
         </div>
+      )}
+
+      {exporting && (
+        <FlowReportModal
+          flowName={flow.name}
+          onCancel={() => setExporting(false)}
+          onPrint={(reveal) => { setExporting(false); setPrinting({ reveal }); }}
+        />
+      )}
+
+      {/* Into the body, past the app: printing hides #root and shows this. */}
+      {printing && report && createPortal(
+        <FlowReportDoc
+          flow={flow}
+          report={report}
+          environmentName={environmentName}
+          reveal={printing.reveal}
+        />,
+        document.body,
       )}
 
       {/* Only the steps scroll. Run and Delete belong to the whole flow, so

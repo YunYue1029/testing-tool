@@ -417,6 +417,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
   overflow-x: auto; white-space: pre;
 }
+/* The saved request's body, copied onto the step. Wraps and stops at ten lines
+   — a JSON payload is as long as it likes, and the dialog is not. */
+.step-body-copy {
+  white-space: pre-wrap; word-break: break-word;
+  max-height: calc(1.4em * 10); overflow-y: auto;
+}
+.step-body-follows { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
 .inline-body-type {
   display: inline-flex; gap: 12px; margin: 0 0 0 12px; vertical-align: middle;
 }
@@ -773,3 +780,80 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .transfer-count { color: var(--muted); }
 /* A section the file hasn't got: shown, so it is clear it wasn't skipped. */
 .transfer-row.is-absent { opacity: .5; cursor: not-allowed; }
+
+/* ---- The printed run report ---- */
+/* A document, not a panel. It is written into the body past the app, kept off
+   the screen entirely, and shown only to the printer — which is what turns the
+   browser's own print dialog ("Save as PDF") into the file you send someone.
+   None of the app's variables reach it: paper is white, whatever the theme. */
+.report-secrets { display: flex; align-items: center; gap: 6px; padding: 4px 6px; cursor: pointer; }
+.flow-summary .report-export { margin-left: auto; padding: 2px 10px; font-size: 12px; }
+.print-report { display: none; }
+
+@media print {
+  /* The app is not the document. Hiding the root also spares the print engine
+     the panels' overflow and flex, which paginate into blank pages. */
+  #root { display: none !important; }
+  html, body {
+    display: block; background: #fff; color: #000;
+    font: 12pt/1.45 -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  }
+  .print-report { display: block; padding: 0; }
+  @page { margin: 16mm 14mm; }
+
+  .pr-head { border-bottom: 1.5pt solid #000; padding-bottom: 8pt; margin-bottom: 12pt; }
+  .pr-verdict {
+    display: inline-block; font-size: 10pt; font-weight: 700; letter-spacing: .08em;
+    padding: 2pt 7pt; border: 1.5pt solid #000; border-radius: 3pt; margin-bottom: 6pt;
+  }
+  .pr-verdict.err { background: #000; color: #fff; }
+  .print-report h1 { font-size: 19pt; margin: 0 0 6pt; }
+  .pr-scope, .pr-desc { margin: 0 0 6pt; }
+  /* The flow's own description: the author's account of what this proves, and
+     the one part of the page not derived from the run. */
+  .pr-desc { white-space: pre-wrap; color: #333; }
+  .pr-scope { font-style: italic; color: #333; }
+  .pr-facts { display: flex; flex-wrap: wrap; gap: 4pt 24pt; margin: 8pt 0 0; }
+  .pr-facts div { display: flex; gap: 6pt; }
+  .pr-facts dt { color: #555; }
+  .pr-facts dd { margin: 0; font-weight: 600; }
+  .pr-error { color: #000; font-weight: 600; }
+  .pr-empty { color: #555; }
+
+  .pr-steps { list-style: none; margin: 0; padding: 0; }
+  /* A step is read as a unit, so it is not split across a page boundary. */
+  .pr-step { break-inside: avoid; padding: 8pt 0 8pt 22pt; border-bottom: .5pt solid #bbb; position: relative; }
+  .pr-step-head { display: flex; align-items: baseline; gap: 6pt; }
+  .pr-mark { position: absolute; left: 0; font-size: 13pt; font-weight: 700; }
+  .pr-step.skip { color: #666; }
+  .pr-step-name { font-size: 13pt; font-weight: 600; }
+  .pr-tag {
+    font-size: 8.5pt; text-transform: uppercase; letter-spacing: .06em;
+    border: .5pt solid #888; border-radius: 2pt; padding: 0 4pt; color: #555;
+  }
+  .pr-step-what {
+    font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 9.5pt;
+    color: #222; margin-top: 3pt; word-break: break-all;
+  }
+  .pr-step-facts { font-size: 10pt; color: #333; margin-top: 2pt; }
+  .pr-dot { color: #666; }
+  .pr-step-note { font-size: 10pt; margin-top: 3pt; color: #333; }
+  .pr-checks { list-style: none; margin: 4pt 0 0; padding: 0; font-size: 10pt; }
+  .pr-checks li { margin-top: 1pt; }
+  /* Ink, not colour: a report is as likely to come off a mono printer, and a
+     failed check that reads as grey is a failed check nobody sees. */
+  .pr-checks li.err { font-weight: 700; }
+  .pr-checks li.ok { color: #333; }
+
+  .pr-vars { break-inside: avoid; margin-top: 14pt; }
+  .pr-vars h2 { font-size: 12pt; margin: 0 0 5pt; }
+  .pr-vars table { border-collapse: collapse; width: 100%; font-size: 10pt; }
+  .pr-vars th, .pr-vars td {
+    text-align: left; vertical-align: top; padding: 2pt 6pt 2pt 0;
+    border-bottom: .5pt solid #ddd; word-break: break-all;
+  }
+  .pr-vars th { width: 26%; font-weight: 600; }
+  .pr-vars td { font-family: 'SF Mono', Menlo, Consolas, monospace; }
+
+  .pr-foot { margin-top: 16pt; padding-top: 6pt; border-top: .5pt solid #bbb; font-size: 9pt; color: #555; }
+}
