@@ -79,7 +79,18 @@ export default function App() {
   const [flows, setFlows] = useState<Flow[]>([]);
   const [flowFolders, setFlowFolders] = useState<Folder[]>([]);
   const [flow, setFlow] = useState<Flow | null>(null); // the open flow, or null for the request view
-  const [flowReport, setFlowReport] = useState<FlowRunReport | null>(null);
+  // The last run of each flow, by flow id. Switching between a test and a flow
+  // is a dozen times an hour, and a report that went away on the way out meant
+  // running the flow again to read what it had already said. In memory only:
+  // a report answers for the flow as it stood minutes ago, and one restored
+  // from yesterday's tab would be answering for something else.
+  const [flowReports, setFlowReports] = useState<Record<string, FlowRunReport>>({});
+  const flowReport = flow ? flowReports[flow.id] || null : null;
+  const forgetReports = (ids: string[]) => setFlowReports((all) => {
+    const next = { ...all };
+    for (const id of ids) delete next[id];
+    return next;
+  });
   const [flowRunning, setFlowRunning] = useState(false);
   const [runningStep, setRunningStep] = useState<string | null>(null); // step id being run on its own
 
@@ -248,7 +259,6 @@ export default function App() {
     skipFlowSave.current = true;
     flowUnsaved.current = false;
     setFlow(f);
-    setFlowReport(null);
   }
 
   // ---- Keeping up with edits made elsewhere ----
@@ -377,10 +387,8 @@ export default function App() {
     if (!confirm(what)) return;
     const { deletedFlows } = await api.deleteFlowFolder(folder.id);
     // Whatever was open may have just been deleted with it.
-    if (flow && deletedFlows.includes(flow.id)) {
-      setFlow(null);
-      setFlowReport(null);
-    }
+    forgetReports(deletedFlows);
+    if (flow && deletedFlows.includes(flow.id)) setFlow(null);
     await refresh();
   }
 
@@ -389,21 +397,29 @@ export default function App() {
     if (!confirm(`Delete flow "${flow.name}"?`)) return;
     await api.deleteFlow(flow.id);
     setFlows((fs) => fs.filter((f) => f.id !== flow.id));
+    forgetReports([flow.id]);
     setFlow(null);
-    setFlowReport(null);
   }
 
   async function runFlow() {
     if (!flow) return;
+    // Which flow this run answers for, held here rather than read back off
+    // `flow` at the end: the run takes seconds, and by then the open flow may
+    // be another one entirely.
+    const id = flow.id;
     setFlowRunning(true);
-    setFlowReport(null);
+    forgetReports([id]);
     try {
       // Save first: the report is only meaningful for the steps as they stand.
       const saved = await api.saveFlow(flow);
       setFlows((fs) => fs.map((f) => (f.id === saved.id ? saved : f)));
-      setFlowReport(await api.runFlow(saved.id, { environment: activeEnvId || undefined }));
+      const rep = await api.runFlow(saved.id, { environment: activeEnvId || undefined });
+      setFlowReports((all) => ({ ...all, [id]: rep }));
     } catch (e) {
-      setFlowReport({ ok: false, durationMs: 0, steps: [], vars: {}, error: (e as Error).message });
+      setFlowReports((all) => ({
+        ...all,
+        [id]: { ok: false, durationMs: 0, steps: [], vars: {}, error: (e as Error).message },
+      }));
       alert(`Could not run the flow: ${(e as Error).message}`);
     } finally {
       setFlowRunning(false);
@@ -415,6 +431,7 @@ export default function App() {
   // so it must not claim to have re-answered for the rest.
   async function runStep(stepId: string) {
     if (!flow) return;
+    const id = flow.id;
     setRunningStep(stepId);
     try {
       // Save first, as a full run does: the result is only meaningful for the
@@ -423,17 +440,21 @@ export default function App() {
       setFlows((fs) => fs.map((f) => (f.id === saved.id ? saved : f)));
       const rep = await api.runFlowStep(saved.id, stepId, { environment: activeEnvId || undefined });
       const entry = rep.steps[0];
-      setFlowReport((prev) => {
+      setFlowReports((all) => {
+        const prev = all[id];
         const kept = (prev && prev.steps) || [];
         return {
-          ...rep,
-          steps: kept.some((s) => s.id === stepId)
-            ? kept.map((s) => (s.id === stepId ? entry : s))
-            : [...kept, entry],
-          vars: { ...(prev && prev.vars), ...rep.vars },
-          // What the summary bar reports on, so it says "step" rather than
-          // passing a one-step run off as the whole flow.
-          oneStep: stepId,
+          ...all,
+          [id]: {
+            ...rep,
+            steps: kept.some((s) => s.id === stepId)
+              ? kept.map((s) => (s.id === stepId ? entry : s))
+              : [...kept, entry],
+            vars: { ...(prev && prev.vars), ...rep.vars },
+            // What the summary bar reports on, so it says "step" rather than
+            // passing a one-step run off as the whole flow.
+            oneStep: stepId,
+          },
         };
       });
     } catch (e) {
