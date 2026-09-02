@@ -217,6 +217,12 @@ Flows — testing a whole feature, not one endpoint:
 - A flow chains steps: login -> create -> read -> update -> delete. Steps pass
   values on with extract ({var:"user_id", from:"body", path:"data.id"}), which
   later steps use as {{user_id}}.
+- Always give a flow a description: which case it covers and what it assumes —
+  the thing a name has no room for. list_flows reports it, so it is also how the
+  right flow is found again without opening every one.
+- Changing an existing flow: get_flow first and carry each step's id over.
+  save_flow replaces the step list whole, and a step sent without its id is
+  treated as new, stranding whatever still points at the old one.
 - WHERE A STEP'S REQUEST LIVES. Default to mode:"inline" — the request typed
   into the step. A step that exists only to exercise a case is a test, and a
   test belongs in the flow that needs it:
@@ -249,6 +255,10 @@ Flows — testing a whole feature, not one endpoint:
 - Every command in a flow runs in the same shell, so a cd or an export in one
   step is still in force in the next. Write a sequence as several steps, each
   with its own assertions, rather than one command strung together with &&.
+  shell_cwd is where that shell starts. Anything that ends it (exit, a timeout,
+  a command printing more than 1MB) leaves the next step to start a new one with
+  none of that state, reported as fresh_shell; pass shell_session:false for a
+  flow whose commands must not be able to affect one another.
 - A command worth running more than once belongs in a collection, not typed
   into each flow: save_shell_test files it beside the endpoints it checks, and
   a step points at it with collection_id + request_id like any saved request.
@@ -290,8 +300,11 @@ Auth & environments:
   env.set), or store tokens with set_env_var.
 
 Rules:
-- Write one at a time: never issue parallel save_request/create_folder calls
-  against the same collection (whole-document writes can lose updates).
+- Never save one request twice at once: save_request reads the stored request
+  first, to keep the fields this schema cannot express, so two parallel saves of
+  the same request_id lose whichever landed first. Saves of different requests,
+  and create_folder, are safe to run alongside each other — each is merged into
+  the collection under a lock rather than overwriting the whole document.
 - Multipart/file bodies can't be created or edited here (body types: none,
   json, text) — a request already using one keeps it through save_request;
   its fields are edited in the app.
