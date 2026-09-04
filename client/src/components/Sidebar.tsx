@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { authHeader } from '../util';
+import { authHeader, folderWithDescendants } from '../util';
 import { searchWorkspace, highlightParts } from '../search';
 import {
   IconPlus, IconClose, IconPencil, IconFolder, IconCollection, IconImport, IconExport,
@@ -33,6 +33,7 @@ interface SidebarProps {
   onOpenFlow: (flow: Flow) => void;
   onNewFlow: (folderId?: string | null) => void;
   onMoveFlow: (flowId: string, folderId: string | null) => void;
+  onMoveFlowFolder: (folderId: string, parentId: string | null) => void;
   onNewFlowFolder: (parentId: string | null) => void;
   onRenameFlowFolder: (folder: Folder) => void;
   onDeleteFlowFolder: (folder: Folder) => void;
@@ -42,6 +43,20 @@ interface SidebarProps {
 // from a file dragged in off the desktop before it lights up.
 const FLOW_DRAG_TYPE = 'application/x-testing-tool-flow';
 const REQUEST_DRAG_TYPE = 'application/x-testing-tool-request';
+// A flow folder moves the same way its flows do, so it travels as its own type:
+// a head that would take a flow has to be able to refuse a folder that would
+// land inside itself.
+const FLOW_FOLDER_DRAG_TYPE = 'application/x-testing-tool-flow-folder';
+
+// How long a collapsed folder has to be hovered, mid-drag, before it opens.
+// Long enough that merely crossing one on the way somewhere else leaves it
+// shut, short enough that stopping on it feels like it answered.
+const SPRING_DELAY = 600;
+// The band at each end of the tree that scrolls while a drag hovers in it, and
+// how far one frame moves. 8px a frame is about a row every three frames — fast
+// enough to cross a long tree, slow enough to stop on the right folder.
+const SCROLL_EDGE = 52;
+const SCROLL_STEP = 8;
 
 // What a row shows of where a request points: its url, or for a shell test
 // the command, which is the only thing it has.
@@ -71,10 +86,11 @@ export default function Sidebar({
   onNewCollection, onOpenCollectionSettings, onDeleteCollection, onDeleteRequest,
   onRenameRequest, onMoveRequest, onNewRequestIn, onNewFolder, onRenameFolder, onDeleteFolder,
   onImport, onExport,
-  flows, flowFolders, activeFlowId, onOpenFlow, onNewFlow, onMoveFlow,
+  flows, flowFolders, activeFlowId, onOpenFlow, onNewFlow, onMoveFlow, onMoveFlowFolder,
   onNewFlowFolder, onRenameFlowFolder, onDeleteFlowFolder,
 }: SidebarProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return (JSON.parse(localStorage.getItem('collapsedCols') || 'null') || {}) as Record<string, boolean>;
@@ -151,9 +167,86 @@ export default function Sidebar({
     localStorage.setItem('collapsedCols', JSON.stringify(next));
   }
 
+  // Read through a ref rather than the render's copy: a spring-open fires from
+  // a timer armed some folders ago, and merging into what `collapsed` was then
+  // would shut whatever opened in between.
+  const collapsedRef = useRef(collapsed);
+  collapsedRef.current = collapsed;
+
   function setCollapsedFor(id: string, value: boolean) {
-    persistCollapsed({ ...collapsed, [id]: value });
+    persistCollapsed({ ...collapsedRef.current, [id]: value });
   }
+
+  // ---- Getting to a folder you cannot see ----
+  // Two things a tree this size needs before dragging into it is realistic: a
+  // closed folder opens if you hover it, and the tree scrolls if you hover its
+  // edge. Both belong to the drag, so both are undone the moment it ends.
+  const spring = useRef<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+
+  function cancelSpring() {
+    if (!spring.current) return;
+    clearTimeout(spring.current.timer);
+    spring.current = null;
+  }
+
+  // Called on every dragover, which repeats while the pointer sits still: the
+  // timer is armed by the first one and left alone by the rest.
+  function armSpring(id: string | null) {
+    if (!id || !isCollapsed(id)) { cancelSpring(); return; }
+    if (spring.current && spring.current.id === id) return;
+    cancelSpring();
+    spring.current = {
+      id,
+      timer: setTimeout(() => { spring.current = null; setCollapsedFor(id, false); }, SPRING_DELAY),
+    };
+  }
+
+  // Driven by the frame clock rather than a timer: the step is a distance per
+  // frame, and a drag only happens in a window the user is looking at.
+  const autoScroll = useRef<{ raf: number; dy: number } | null>(null);
+
+  function stopAutoScroll() {
+    if (!autoScroll.current) return;
+    cancelAnimationFrame(autoScroll.current.raf);
+    autoScroll.current = null;
+  }
+
+  function autoScrollAt(clientY: number) {
+    const el = scrollRef.current;
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    let dy = 0;
+    if (clientY < box.top + SCROLL_EDGE) dy = -SCROLL_STEP;
+    else if (clientY > box.bottom - SCROLL_EDGE) dy = SCROLL_STEP;
+    if (!dy) { stopAutoScroll(); return; }
+    // Already scrolling: only the direction can have changed. Starting a second
+    // loop would scroll twice as fast for the rest of the drag.
+    if (autoScroll.current) { autoScroll.current.dy = dy; return; }
+    const state = { dy, raf: 0 };
+    const step = () => {
+      el.scrollTop += state.dy;
+      state.raf = requestAnimationFrame(step);
+    };
+    state.raf = requestAnimationFrame(step);
+    autoScroll.current = state;
+  }
+
+  // One of ours, rather than a file dragged in off the desktop — asked of the
+  // scroller, which sees every drag that crosses the tree at all.
+  const dragging = (e: React.DragEvent) => e.dataTransfer.types.some(
+    (t) => t === FLOW_DRAG_TYPE || t === REQUEST_DRAG_TYPE || t === FLOW_FOLDER_DRAG_TYPE,
+  );
+
+  // Everything a drag turned on, off — for the drop, and for the drag that
+  // ended over nothing, which never reaches a drop handler at all.
+  function endDrag() {
+    cancelSpring();
+    stopAutoScroll();
+  }
+
+  // A drag can also end by this whole tree going away (a search query replaces
+  // it), which fires no drag event anywhere.
+  useEffect(() => endDrag, []);
 
   const flowsIn = (folderId: string | null) => (flows || [])
     .filter((f) => (f.folderId || null) === folderId)
@@ -165,34 +258,58 @@ export default function Sidebar({
   // onto the "Flows" header to take it back out to the root.
   const [dragFlowId, setDragFlowId] = useState<string | null>(null); // the flow under the cursor
   const [dropInto, setDropInto] = useState<string | null | undefined>(undefined); // folder id, null = root
+  // The folder being dragged, if it is a folder and not a flow. In a ref as
+  // well as state because a dragover has to know, and getData stays sealed
+  // until the drop: whether a head may take this folder is a question about
+  // which folder is moving.
+  const [dragFolderId, setDragFolderId] = useState<string | null>(null);
+  const dragFolderRef = useRef<string | null>(null);
 
   function flowDropProps(folderId: string | null) {
+    // What this head takes. A flow, always. A folder only if that would not
+    // file it inside itself or its own subtree — which would cut the branch
+    // off the tree, leaving it in the file and reachable from nothing.
+    const takes = (e: React.DragEvent): boolean => {
+      // getData is sealed until the drop, so a dragover has only the type to
+      // go on — which also keeps files dragged in from the desktop out.
+      if (e.dataTransfer.types.includes(FLOW_DRAG_TYPE)) return true;
+      if (!e.dataTransfer.types.includes(FLOW_FOLDER_DRAG_TYPE)) return false;
+      const moving = dragFolderRef.current;
+      if (!moving || moving === folderId) return false;
+      return !folderWithDescendants(flowFolders, moving).includes(folderId as string);
+    };
     return {
       onDragOver: (e: React.DragEvent) => {
-        // getData is sealed until the drop, so a dragover has only the type to
-        // go on — which also keeps files dragged in from the desktop out.
-        if (!e.dataTransfer.types.includes(FLOW_DRAG_TYPE)) return;
+        if (!takes(e)) return;
         e.preventDefault(); // the default answer to "may I drop here" is no
         e.dataTransfer.dropEffect = 'move';
         setDropInto(folderId);
+        armSpring(folderId);
       },
       onDragLeave: (e: React.DragEvent) => {
         // Crossing onto a child fires leave on the parent, where the pointer
         // still is; only a leave that really left counts.
         if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        cancelSpring();
         setDropInto((cur) => (cur === folderId ? undefined : cur));
       },
       onDrop: (e: React.DragEvent) => {
-        if (!e.dataTransfer.types.includes(FLOW_DRAG_TYPE)) return;
+        if (!takes(e)) return;
         e.preventDefault();
         e.stopPropagation();
-        const id = dragFlowId || e.dataTransfer.getData(FLOW_DRAG_TYPE);
+        const movingFolder = dragFolderRef.current
+          || e.dataTransfer.getData(FLOW_FOLDER_DRAG_TYPE);
+        const movingFlow = dragFlowId || e.dataTransfer.getData(FLOW_DRAG_TYPE);
+        dragFolderRef.current = null;
+        setDragFolderId(null);
         setDropInto(undefined);
         setDragFlowId(null);
-        // Dropping into a closed folder would otherwise look like the flow
-        // vanished.
+        endDrag();
+        // Dropping into a closed folder would otherwise look like the thing
+        // dropped had vanished.
         if (folderId) setCollapsedFor(folderId, false);
-        if (id) onMoveFlow(id, folderId);
+        if (movingFolder) onMoveFlowFolder(movingFolder, folderId);
+        else if (movingFlow) onMoveFlow(movingFlow, folderId);
       },
     };
   }
@@ -221,9 +338,11 @@ export default function Sidebar({
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         setDropInto(key);
+        armSpring(folderId);
       },
       onDragLeave: (e: React.DragEvent) => {
         if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        cancelSpring();
         setDropInto((cur) => (cur === key ? undefined : cur));
       },
       onDrop: (e: React.DragEvent) => {
@@ -234,6 +353,7 @@ export default function Sidebar({
         dragReqRef.current = null;
         setDropInto(undefined);
         setDragReq(null);
+        endDrag();
         if (folderId) setCollapsedFor(folderId, false);
         onMoveRequest(colId, moved!.id, folderId);
       },
@@ -263,7 +383,9 @@ export default function Sidebar({
           e.dataTransfer.setData('text/plain', r.name || reqWhat(r) || 'request');
         }}
         // Also on a drag that ended nowhere, or the row stays greyed out.
-        onDragEnd={() => { dragReqRef.current = null; setDragReq(null); setDropInto(undefined); }}
+        onDragEnd={() => {
+          dragReqRef.current = null; setDragReq(null); setDropInto(undefined); endDrag();
+        }}
       >
         {/* SH rather than a method: a shell test sends nothing, and the tag is
             how a row says which of the two it is before you open it. */}
@@ -306,7 +428,7 @@ export default function Sidebar({
           e.dataTransfer.setData('text/plain', f.name || 'flow');
         }}
         // Also on a drag that ended nowhere, or the row stays greyed out.
-        onDragEnd={() => { setDragFlowId(null); setDropInto(undefined); }}
+        onDragEnd={() => { setDragFlowId(null); setDropInto(undefined); endDrag(); }}
       >
         <span className="tag tag-FLOW">FLOW</span>
         <span className="req-name" title={`${f.name} — drag onto a folder to file it`}>{f.name}</span>
@@ -323,14 +445,39 @@ export default function Sidebar({
         {folders.map((f) => (
           <div className="folder" key={f.id}>
             <div
-              className={`folder-head ${dropInto === f.id ? 'drop-into' : ''}`}
+              className={`folder-head ${dropInto === f.id ? 'drop-into' : ''} `
+                + `${dragFolderId === f.id ? 'dragging' : ''}`}
               style={{ paddingLeft: 12 + depth * 14 }}
               onClick={() => setCollapsedFor(f.id, !isCollapsed(f.id))}
+              // A folder is filed the same way the flows in it are: dragged.
+              // It carries its whole subtree, so it is the head that moves and
+              // nothing inside has to be touched.
+              draggable
+              onDragStart={(e) => {
+                e.stopPropagation(); // a sub-folder moves itself, not its parent
+                dragFolderRef.current = f.id;
+                setDragFolderId(f.id);
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData(FLOW_FOLDER_DRAG_TYPE, f.id);
+                // Firefox refuses to start a drag that carries no text/plain.
+                e.dataTransfer.setData('text/plain', f.name || 'folder');
+              }}
+              onDragEnd={() => {
+                dragFolderRef.current = null;
+                setDragFolderId(null);
+                setDropInto(undefined);
+                endDrag();
+              }}
               {...flowDropProps(f.id)}
             >
               <span className={`caret ${isCollapsed(f.id) ? '' : 'open'}`}>▸</span>
               <span className="folder-icon"><IconFolder /></span>
-              <span className="folder-name" title="Click to collapse/expand — or drop a flow here to file it">{f.name}</span>
+              <span
+                className="folder-name"
+                title="Click to collapse/expand — drop a flow or folder here to file it, or drag it into another folder"
+              >
+                {f.name}
+              </span>
               <button
                 className="mini"
                 title="Rename folder"
@@ -471,7 +618,24 @@ export default function Sidebar({
           : <kbd>⌘K</kbd>}
       </div>
 
-      <div className="side-scroll">
+      {/* The tree scrolls itself while a drag hovers near either end: the row
+          you picked up and the folder you want are rarely on screen together,
+          and mid-drag there is no other way to reach the rest of the tree. */}
+      <div
+        className="side-scroll"
+        ref={scrollRef}
+        onDragOver={(e) => {
+          // Read-only: preventDefault here would make the whole tree a drop
+          // target, and the gaps between rows accept nothing.
+          if (!dragging(e)) return;
+          autoScrollAt(e.clientY);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+          stopAutoScroll();
+        }}
+        onDrop={endDrag}
+      >
         {searching && (
           <div className="search-results">
             <div className="search-head">
@@ -587,14 +751,17 @@ export default function Sidebar({
         {!searching && (
         <div className="collection flows-section">
           {/* The header doubles as the root of the flow tree: dropping a flow
-              here takes it back out of whatever folder it was in. */}
+              or a folder here takes it back out of whatever folder it was in. */}
           <div
             className={`collection-head ${dropInto === null ? 'drop-into' : ''}`}
             onClick={() => setCollapsedFor('__flows', !isSectionCollapsed('__flows'))}
             {...flowDropProps(null)}
           >
             <span className={`caret ${isSectionCollapsed('__flows') ? '' : 'open'}`}>▸</span>
-            <span className="collection-name">
+            <span
+              className="collection-name"
+              title="Click to collapse/expand — or drop a flow or folder here to move it to the top level"
+            >
               Flows
             </span>
             <button

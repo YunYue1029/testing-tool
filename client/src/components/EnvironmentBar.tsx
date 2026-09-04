@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import KeyValueEditor from './KeyValueEditor';
 import { IconPencil, IconClose } from './Icons';
 import HelpTip from './HelpTip';
+import useAutoSave from '../useAutoSave';
 import { DEFAULT_BASE_URL } from '../util';
 import type { Collection, Environment, Row } from '../types.ts';
 
@@ -17,7 +18,9 @@ interface EnvironmentBarProps {
   environments: Environment[];
   activeEnvId: string | null;
   onSelect: (id: string | null) => void;
-  onSaveEnv: (env: Partial<Environment>) => Promise<void> | void;
+  // Answers with the stored environment: a new one is only new until its first
+  // auto-save, and what it saves next depends on the id it got back.
+  onSaveEnv: (env: Partial<Environment>) => Promise<Environment>;
   onDeleteEnv: (id: string) => Promise<void> | void;
   collections: Collection[];
   collection: Collection | null | undefined;
@@ -50,24 +53,37 @@ export default function EnvironmentBar({
     setEditing({ id: env.id, name: env.name, rows });
   }
 
-  async function save() {
+  // Written as the variables are edited, not when a button says so: an
+  // environment is edited by opening it, changing a value and going back to
+  // what you were doing, and a Save between those two is a step to forget.
+  const autoSave = useAutoSave(editing, async (draft: EnvDraft) => {
     // Unchecked rows are kept (value preserved) but listed as disabled so
     // they don't participate in {{var}} substitution.
     const variables: Record<string, string> = {};
     const disabled: string[] = [];
-    for (const r of editing!.rows) {
+    for (const r of draft.rows) {
       if (!r.key) continue;
       variables[r.key] = r.value;
       if (r.enabled === false) disabled.push(r.key);
     }
-    try {
-      await onSaveEnv({
-        id: editing!.id || undefined, name: editing!.name || 'Untitled', variables, disabled,
-      });
-    } catch (e) {
-      alert(`Failed to save environment: ${(e as Error).message}`);
-      return;
+    const saved = await onSaveEnv({
+      id: draft.id || undefined, name: draft.name || 'Untitled', variables, disabled,
+    });
+    // The draft stops being new here, or the next keystroke would create a
+    // second environment instead of writing this one again. The id is the
+    // save's own doing, so it is not an edit to save.
+    if (!draft.id) {
+      autoSaveRef.current.skipNext();
+      setEditing((d) => (d && !d.id ? { ...d, id: saved.id } : d));
     }
+  });
+  // The editor's own auto-save, reachable from inside the save it runs.
+  const autoSaveRef = useRef(autoSave);
+  autoSaveRef.current = autoSave;
+
+  async function closeEditor() {
+    // Whatever was typed in the last 600ms is still only here.
+    await autoSave.flush();
     setEditing(null);
   }
 
@@ -239,9 +255,12 @@ export default function EnvironmentBar({
       )}
 
       {editing && (
-        // Backdrop clicks intentionally don't close the modal — a stray click
-        // shouldn't discard the variables being edited. Use Cancel or Save.
-        <div className="modal-backdrop">
+        // A backdrop click closes it, which it could not while closing meant
+        // discarding: the variables are already saved by the time it happens.
+        <div
+          className="modal-backdrop"
+          onClick={(e) => { if (e.target === e.currentTarget) closeEditor(); }}
+        >
           <div className="modal">
             <h3>
               {editing.id ? 'Edit' : 'New'} Environment
@@ -252,7 +271,7 @@ export default function EnvironmentBar({
               value={editing.name}
               placeholder="Environment name"
               onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-              onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') closeEditor(); }}
             />
             <KeyValueEditor
               rows={editing.rows}
@@ -272,8 +291,12 @@ export default function EnvironmentBar({
                 >Delete</button>
               )}
               <span className="spacer" />
-              <button className="btn-secondary" onClick={() => setEditing(null)}>Cancel</button>
-              <button className="btn-send" onClick={save}>Save</button>
+              {autoSave.status && (
+                <span className={`save-status ${autoSave.status === 'Save failed' ? 'err' : ''}`}>
+                  {autoSave.status}
+                </span>
+              )}
+              <button className="btn-send" onClick={closeEditor}>Close</button>
             </div>
           </div>
         </div>

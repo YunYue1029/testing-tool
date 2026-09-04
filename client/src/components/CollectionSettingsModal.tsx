@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import HelpTip from './HelpTip';
+import useAutoSave from '../useAutoSave';
 import { authFormState, authToStore } from '../util';
 import type { Auth, AuthForm, Collection } from '../types.ts';
 
@@ -8,26 +9,38 @@ import type { Auth, AuthForm, Collection } from '../types.ts';
 // applied to requests that don't set their own Authorization / key header.
 interface CollectionSettingsModalProps {
   collection: Collection;
-  onSave: (fields: { name: string; auth: Auth; baseUrl: string }) => void;
-  onCancel: () => void;
+  onSave: (fields: { name: string; auth: Auth; baseUrl: string }) => Promise<unknown> | unknown;
+  onClose: () => void;
 }
 
 export default function CollectionSettingsModal(
-  { collection, onSave, onCancel }: CollectionSettingsModalProps,
+  { collection, onSave, onClose }: CollectionSettingsModalProps,
 ) {
   const [auth, setAuth] = useState(() => authFormState(collection.auth));
   const [name, setName] = useState(collection.name || '');
   const [baseUrl, setBaseUrl] = useState(collection.baseUrl || '');
   const set = (patch: Partial<AuthForm>) => setAuth((a) => ({ ...a, ...patch }));
 
-  function submit() {
-    // An empty box is a slip, not a request for a nameless collection.
-    const nextName = name.trim() || collection.name;
-    onSave({ name: nextName, auth: authToStore(auth), baseUrl: baseUrl.trim() });
+  // An empty box is a slip, not a request for a nameless collection.
+  const fields = useMemo(
+    () => ({ name: name.trim() || collection.name, auth: authToStore(auth), baseUrl: baseUrl.trim() }),
+    [name, auth, baseUrl, collection.name],
+  );
+  // Saved as it is edited, like the requests inside it: a base URL changed on
+  // the way to sending something is a change nobody comes back to confirm.
+  const autoSave = useAutoSave(fields, onSave);
+
+  async function close() {
+    // Whatever was typed in the last 600ms is still only here.
+    await autoSave.flush();
+    onClose();
   }
 
   return (
-    <div className="modal-backdrop">
+    <div
+      className="modal-backdrop"
+      onClick={(e) => { if (e.target === e.currentTarget) close(); }}
+    >
       <div className="modal">
         <h3>Edit collection</h3>
 
@@ -39,7 +52,7 @@ export default function CollectionSettingsModal(
             placeholder={collection.name}
             autoFocus
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') close(); }}
           />
         </div>
 
@@ -119,8 +132,12 @@ export default function CollectionSettingsModal(
 
         <div className="modal-actions">
           <span className="spacer" />
-          <button className="btn-secondary" onClick={onCancel}>Cancel</button>
-          <button className="btn-send" onClick={submit}>Save</button>
+          {autoSave.status && (
+            <span className={`save-status ${autoSave.status === 'Save failed' ? 'err' : ''}`}>
+              {autoSave.status}
+            </span>
+          )}
+          <button className="btn-send" onClick={close}>Close</button>
         </div>
       </div>
     </div>

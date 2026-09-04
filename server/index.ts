@@ -167,9 +167,17 @@ app.post('/api/flow-folders', asyncH(async (req, res) => {
 app.patch('/api/flow-folders/:fid', asyncH(async (req, res) => {
   const { name, parentId } = req.body || {};
   let found = false;
+  let cycle = false;
   const list = await flowFolders.update((cur) => {
     const idx = cur.findIndex((f) => f.id === req.params.fid);
     if (idx < 0) return null;
+    // Filing a folder inside its own subtree cuts the branch off the tree: it
+    // stays in the file, reachable from no root. Checked here, inside the
+    // lock, because the tree it has to be true of is the one being written.
+    if (parentId && withDescendants(cur, req.params.fid).includes(parentId)) {
+      cycle = true;
+      return null;
+    }
     found = true;
     const next = cur.slice();
     next[idx] = {
@@ -179,6 +187,7 @@ app.patch('/api/flow-folders/:fid', asyncH(async (req, res) => {
     };
     return next;
   });
+  if (cycle) return res.status(400).json({ error: 'A folder cannot be filed inside itself' });
   if (!found) return res.status(404).json({ error: 'Not found' });
   return res.json(list);
 }));

@@ -1,5 +1,5 @@
 // What a run report may not carry out of the building. A report exists to be
-// forwarded — that is the whole point of printing one — and the run it records
+// forwarded — that is the whole point of making one — and the run it records
 // was authenticated, so it holds bearer tokens, session cookies and whatever
 // the login was given. Covering them is the default; the export offers to show
 // them for a report that stays in the room.

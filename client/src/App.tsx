@@ -369,6 +369,21 @@ export default function App() {
     await refresh();
   }
 
+  // Refiling a whole folder — dragged onto another one, or onto the Flows
+  // header to bring it back up to the top level. Only the folder's own parent
+  // changes: everything under it is filed by parent too, so the subtree comes
+  // along without being touched.
+  async function moveFlowFolder(folderId: string, parentId: string | null) {
+    const target = flowFolders.find((f) => f.id === folderId);
+    if (!target || (target.parentId || null) === (parentId || null)) return;
+    // The sidebar already refuses this drop; the check is here as well because
+    // a folder inside its own subtree would be lost — still in the file, and
+    // reachable from nothing.
+    if (parentId && folderWithDescendants(flowFolders, folderId).includes(parentId)) return;
+    await api.patchFlowFolder(folderId, { parentId: parentId || null });
+    await refresh();
+  }
+
   async function renameFlowFolder(folder: Folder) {
     const name = prompt('Rename folder:', folder.name);
     if (!name || name === folder.name) return;
@@ -758,11 +773,12 @@ export default function App() {
     setCollections((cols) => cols.map((c) => (c.id === saved.id ? saved : c)));
   }
 
+  // Written as the dialog is edited, so it stays open afterwards: closing it is
+  // the Close button's job, not a save's.
   async function saveCollectionSettings(fields: Partial<Collection>) {
     if (!settingsCol) return;
-    await api.patchCollection(settingsCol.id, fields);
-    setSettingsCol(null);
-    await refresh();
+    const saved = await api.patchCollection(settingsCol.id, fields);
+    setCollections((cols) => cols.map((c) => (c.id === saved.id ? saved : c)));
   }
 
   async function deleteCollection(col: Collection) {
@@ -813,6 +829,7 @@ export default function App() {
         onOpenFlow={openFlow}
         onNewFlow={newFlow}
         onMoveFlow={moveFlow}
+        onMoveFlowFolder={moveFlowFolder}
         onNewFlowFolder={newFlowFolder}
         onRenameFlowFolder={renameFlowFolder}
         onDeleteFlowFolder={deleteFlowFolder}
@@ -833,6 +850,9 @@ export default function App() {
             const saved = await api.saveEnvironment(e);
             await refresh();
             if (!e.id) setActiveEnvId(saved.id); // select a freshly created env
+            // Handed back so the editor knows which environment it is now
+            // writing to, rather than creating another on the next keystroke.
+            return saved;
           }}
           onDeleteEnv={async (id: string) => {
             await api.deleteEnvironment(id);
@@ -886,7 +906,7 @@ export default function App() {
           <CollectionSettingsModal
             collection={settingsCol}
             onSave={saveCollectionSettings}
-            onCancel={() => setSettingsCol(null)}
+            onClose={() => setSettingsCol(null)}
           />
         )}
         <ResponsePanel
@@ -943,7 +963,7 @@ export default function App() {
           <CollectionSettingsModal
             collection={settingsCol}
             onSave={saveCollectionSettings}
-            onCancel={() => setSettingsCol(null)}
+            onClose={() => setSettingsCol(null)}
           />
         )}
         <ResponsePanel response={response} error={error} sending={sending} scriptResult={scriptResult} />
