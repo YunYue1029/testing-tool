@@ -262,6 +262,18 @@ function StepResponse({ rep }: { rep: StepReport }) {
   );
 }
 
+// The flow's name as a download filename: drop what a filesystem won't take,
+// keep it to one line and a sane length, and never hand back an empty string.
+function pdfName(name: string): string {
+  const clean = (name || '')
+    .replace(/[\\/:*?"<>|]+/g, '')   // characters a filesystem refuses
+    .replace(/\s+/g, ' ')            // one line, single-spaced
+    .trim()
+    .slice(0, 120)
+    .replace(/[.\s]+$/, '');         // no trailing dot or space
+  return clean || 'flow-report';
+}
+
 // One flow: an ordered list of requests run together, with the values each step
 // hands to the next and the checks on what came back.
 export default function FlowPanel({
@@ -278,18 +290,41 @@ export default function FlowPanel({
   useEffect(() => { setRespOpen({}); }, [report]);
 
   // Writing the run up for someone who was not here. The dialog asks one
-  // question (whether to print the secrets the run used); answering it mounts
-  // the document and hands the page to the browser's print dialog, where
-  // "Save as PDF" makes the file you send on.
+  // question — whether to print the secrets the run used — and answering it
+  // renders the document off-screen, turns it into "<flow name>.pdf" and drops
+  // that straight into the browser's downloads. No print dialog, no filename to
+  // type, no folder to choose.
   const [exporting, setExporting] = useState(false);
-  const [printing, setPrinting] = useState<{ reveal: boolean } | null>(null);
-  // Print from an effect rather than from the click: the document has to be in
-  // the page before the print dialog reads it, and the click is a frame early.
+  const [capturing, setCapturing] = useState<{ reveal: boolean } | null>(null);
+  // From an effect, not the click: the portal mounts the document this render,
+  // and html2pdf can only read it once it is actually in the page.
   useEffect(() => {
-    if (!printing) return undefined;
-    const t = window.setTimeout(() => { window.print(); setPrinting(null); }, 0);
-    return () => window.clearTimeout(t);
-  }, [printing]);
+    if (!capturing) return undefined;
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      const el = document.querySelector('.print-report.export-capture');
+      if (el) {
+        try {
+          const { default: html2pdf } = await import('html2pdf.js');
+          await html2pdf().set({
+            filename: `${pdfName(flow.name)}.pdf`,
+            // The off-screen document already carries the page margin as its
+            // own padding, so the PDF itself gets none.
+            margin: 0,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            // Honour `break-inside: avoid` on a step so it is not cut in half.
+            pagebreak: { mode: ['css', 'legacy'] },
+          }).from(el).save();
+        } catch (err) {
+          console.error('PDF export failed', err);
+        }
+      }
+      if (!cancelled) setCapturing(null);
+    }, 0);
+    return () => { cancelled = true; window.clearTimeout(t); };
+  }, [capturing, flow.name]);
 
   // The description sizes itself to its text, but the ref callback below only
   // fires on mount — switching flows reuses the same textarea, so without this
@@ -616,9 +651,10 @@ export default function FlowPanel({
               there is nothing to report until a run has happened. */}
           <button
             className="btn-secondary report-export"
-            title="Write this run up as a report — print it to PDF and send it on"
+            title="Write this run up as a report — download it as a PDF and send it on"
             onClick={() => setExporting(true)}
-          >Export report</button>
+            disabled={!!capturing}
+          >{capturing ? 'Saving PDF…' : 'Export report'}</button>
         </div>
       )}
 
@@ -626,18 +662,23 @@ export default function FlowPanel({
         <FlowReportModal
           flowName={flow.name}
           onCancel={() => setExporting(false)}
-          onPrint={(reveal) => { setExporting(false); setPrinting({ reveal }); }}
+          onExport={(reveal) => { setExporting(false); setCapturing({ reveal }); }}
         />
       )}
 
-      {/* Into the body, past the app: printing hides #root and shows this. */}
-      {printing && report && createPortal(
-        <FlowReportDoc
-          flow={flow}
-          report={report}
-          environmentName={environmentName}
-          reveal={printing.reveal}
-        />,
+      {/* Rendered into the body inside a frame clipped to nothing: html2pdf
+          reads the document there, turns it into the download, then it
+          unmounts. */}
+      {capturing && report && createPortal(
+        <div className="export-capture-frame">
+          <FlowReportDoc
+            flow={flow}
+            report={report}
+            environmentName={environmentName}
+            reveal={capturing.reveal}
+            capture
+          />
+        </div>,
         document.body,
       )}
 

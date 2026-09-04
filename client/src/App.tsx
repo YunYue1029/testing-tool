@@ -773,11 +773,12 @@ export default function App() {
     setCollections((cols) => cols.map((c) => (c.id === saved.id ? saved : c)));
   }
 
+  // Written as the dialog is edited, so it stays open afterwards: closing it is
+  // the Close button's job, not a save's.
   async function saveCollectionSettings(fields: Partial<Collection>) {
     if (!settingsCol) return;
-    await api.patchCollection(settingsCol.id, fields);
-    setSettingsCol(null);
-    await refresh();
+    const saved = await api.patchCollection(settingsCol.id, fields);
+    setCollections((cols) => cols.map((c) => (c.id === saved.id ? saved : c)));
   }
 
   async function deleteCollection(col: Collection) {
@@ -849,6 +850,9 @@ export default function App() {
             const saved = await api.saveEnvironment(e);
             await refresh();
             if (!e.id) setActiveEnvId(saved.id); // select a freshly created env
+            // Handed back so the editor knows which environment it is now
+            // writing to, rather than creating another on the next keystroke.
+            return saved;
           }}
           onDeleteEnv={async (id: string) => {
             await api.deleteEnvironment(id);
@@ -902,7 +906,7 @@ export default function App() {
           <CollectionSettingsModal
             collection={settingsCol}
             onSave={saveCollectionSettings}
-            onCancel={() => setSettingsCol(null)}
+            onClose={() => setSettingsCol(null)}
           />
         )}
         <ResponsePanel
@@ -959,7 +963,7 @@ export default function App() {
           <CollectionSettingsModal
             collection={settingsCol}
             onSave={saveCollectionSettings}
-            onCancel={() => setSettingsCol(null)}
+            onClose={() => setSettingsCol(null)}
           />
         )}
         <ResponsePanel response={response} error={error} sending={sending} scriptResult={scriptResult} />

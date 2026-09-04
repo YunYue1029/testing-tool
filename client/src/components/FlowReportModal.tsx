@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import HelpTip from './HelpTip';
 
-// Turning the last run into something you can send someone. The report itself
-// is printed by the browser — "Destination: Save as PDF" in the print dialog —
-// which is why this asks nothing about paper: the one decision that is ours to
-// make is whether the secrets the run used are printed with it.
+// Turning the last run into something you can send someone. Answering the one
+// question here — whether the secrets the run used are written into the file —
+// saves "<flow name>.pdf" straight to your downloads. No print dialog, no
+// filename to type, no folder to pick.
 interface FlowReportModalProps {
   flowName: string;
-  onPrint: (reveal: boolean) => void;
+  onExport: (reveal: boolean) => void;
   onCancel: () => void;
 }
 
-export default function FlowReportModal({ flowName, onPrint, onCancel }: FlowReportModalProps) {
+export default function FlowReportModal({ flowName, onExport, onCancel }: FlowReportModalProps) {
   const [reveal, setReveal] = useState(false);
 
   return (
@@ -20,8 +20,7 @@ export default function FlowReportModal({ flowName, onPrint, onCancel }: FlowRep
         <h3>
           Export report
           <HelpTip>
-            Opens your browser’s print dialog. Choose “Save as PDF” as the destination
-            to get a file you can send on.
+            Saves a PDF named after the flow straight to your downloads folder.
           </HelpTip>
         </h3>
 
@@ -37,18 +36,18 @@ export default function FlowReportModal({ flowName, onPrint, onCancel }: FlowRep
             type="checkbox"
             checked={reveal}
             onChange={(e) => setReveal(e.target.checked)}
-          /> print secrets as they ran
+          /> write secrets into the file as they ran
         </label>
         <p className="hint">
           {reveal
-            ? 'Tokens, passwords and cookies will be printed in full. Fine for a report that stays in the room.'
+            ? 'Tokens, passwords and cookies will be written in full. Fine for a report that stays in the room.'
             : 'Tokens, passwords and cookies are covered with dots. Safe to forward.'}
         </p>
 
         <div className="modal-actions">
           <span className="spacer" />
           <button className="btn-secondary" onClick={onCancel}>Cancel</button>
-          <button className="btn-send" onClick={() => onPrint(reveal)}>Print…</button>
+          <button className="btn-send" onClick={() => onExport(reveal)}>Download PDF</button>
         </div>
       </div>
     </div>

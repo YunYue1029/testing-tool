@@ -9,8 +9,9 @@ import type { Flow, StepReport, Vars } from '../types.ts';
 // for the person who has to go and fix it.
 //
 // It is a document, not a panel — plain black on white, no theme, laid out for
-// paper. On screen it is display:none; @media print hides the app and shows
-// this, which is what turns the browser's print dialog into "save a PDF".
+// paper. On screen it is display:none. With `capture` it is shown off the edge
+// of the page for html2pdf to rasterise into a download; @media print likewise
+// hides the app and shows this, so Cmd-P on the page still prints it.
 interface ReportDocProps {
   flow: Flow;
   report: {
@@ -26,6 +27,9 @@ interface ReportDocProps {
   // Whether tokens, passwords and cookies are printed as they ran. Off by
   // default — see report.ts.
   reveal: boolean;
+  // Position the document off-screen and visible, so html2pdf has something to
+  // measure. Without it the document stays display:none (print path only).
+  capture?: boolean;
 }
 
 function when(iso: string | undefined): string {
@@ -38,7 +42,7 @@ function duration(ms: number | undefined): string {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
-export default function FlowReportDoc({ flow, report, environmentName, reveal }: ReportDocProps) {
+export default function FlowReportDoc({ flow, report, environmentName, reveal, capture }: ReportDocProps) {
   const steps = report.steps || [];
   const skipped = steps.filter((s) => s.skipped);
   const ran = steps.filter((s) => !s.skipped);
@@ -59,7 +63,7 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal }:
     : undefined;
 
   return (
-    <article className="print-report">
+    <article className={capture ? 'print-report export-capture' : 'print-report'}>
       <header className="pr-head">
         <div className={`pr-verdict ${report.ok ? 'ok' : 'err'}`}>
           {report.ok ? 'PASSED' : 'FAILED'}
