@@ -185,7 +185,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 /* Dragging a flow to file it. The row it came from fades so the tree still
    reads while it is in flight, and the folder it would land in is outlined —
    the drop lands on the whole row, so a border is what says where. */
-.req-item.dragging { opacity: .4; }
+.req-item.dragging, .folder-head.dragging { opacity: .4; }
 .folder-head.drop-into, .collection-head.drop-into {
   background: rgba(124, 108, 255, .16); box-shadow: inset 0 0 0 1px var(--accent);
   color: var(--text);

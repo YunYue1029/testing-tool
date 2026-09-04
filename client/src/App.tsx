@@ -369,6 +369,21 @@ export default function App() {
     await refresh();
   }
 
+  // Refiling a whole folder — dragged onto another one, or onto the Flows
+  // header to bring it back up to the top level. Only the folder's own parent
+  // changes: everything under it is filed by parent too, so the subtree comes
+  // along without being touched.
+  async function moveFlowFolder(folderId: string, parentId: string | null) {
+    const target = flowFolders.find((f) => f.id === folderId);
+    if (!target || (target.parentId || null) === (parentId || null)) return;
+    // The sidebar already refuses this drop; the check is here as well because
+    // a folder inside its own subtree would be lost — still in the file, and
+    // reachable from nothing.
+    if (parentId && folderWithDescendants(flowFolders, folderId).includes(parentId)) return;
+    await api.patchFlowFolder(folderId, { parentId: parentId || null });
+    await refresh();
+  }
+
   async function renameFlowFolder(folder: Folder) {
     const name = prompt('Rename folder:', folder.name);
     if (!name || name === folder.name) return;
@@ -813,6 +828,7 @@ export default function App() {
         onOpenFlow={openFlow}
         onNewFlow={newFlow}
         onMoveFlow={moveFlow}
+        onMoveFlowFolder={moveFlowFolder}
         onNewFlowFolder={newFlowFolder}
         onRenameFlowFolder={renameFlowFolder}
         onDeleteFlowFolder={deleteFlowFolder}
