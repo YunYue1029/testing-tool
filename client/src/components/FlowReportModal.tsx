@@ -26,9 +26,9 @@ export default function FlowReportModal({ flowName, onExport, onCancel }: FlowRe
 
         <p className="hint">
           The last run of <strong>{flowName || 'this flow'}</strong>: what each step
-          proved, and the checks behind it. Request and response bodies stay on the
-          screen — a report is for the reader deciding whether this is good, not for
-          the person who has to go and fix it.
+          proved and the checks behind it, and under each one the call as it ran —
+          the request with this run's values resolved in, and the response that
+          came back.
         </p>
 
         <label className="report-secrets" title="Bearer tokens, passwords, cookies and anything captured under a name like token or secret">
@@ -40,8 +40,8 @@ export default function FlowReportModal({ flowName, onExport, onCancel }: FlowRe
         </label>
         <p className="hint">
           {reveal
-            ? 'Tokens, passwords and cookies will be written in full. Fine for a report that stays in the room.'
-            : 'Tokens, passwords and cookies are covered with dots. Safe to forward.'}
+            ? 'Tokens, passwords and cookies will be written in full, in the bodies and headers too. Fine for a report that stays in the room.'
+            : 'Tokens, passwords and cookies are covered with dots — in the captured values, and by name in every url, header and JSON body. Safe to forward.'}
         </p>
 
         <div className="modal-actions">

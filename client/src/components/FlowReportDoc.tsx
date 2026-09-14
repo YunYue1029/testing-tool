@@ -1,12 +1,17 @@
 import React from 'react';
-import { maskDetail, maskUrl, reportVars, scrubber, secretValues } from '../report';
+import {
+  maskDetail, maskHeaders, maskJsonBody, maskUrl, reportVars, scrubber, secretValues,
+} from '../report';
+import { fmtSize, prettify } from '../util';
 import type { Flow, StepReport, Vars } from '../types.ts';
 
-// The run, written up for someone who was not at the keyboard. It reports what
-// each step proved, not what it sent: a reader deciding whether the build is
-// good needs the verdict and the checks behind it, and pasting every request
-// and response body in would bury both. The screen still holds all of that,
-// for the person who has to go and fix it.
+// The run, written up for someone who was not at the keyboard: every step's
+// verdict and the checks behind it, and under each one the whole call — the
+// request as it went out, with this run's {{vars}} resolved into the url,
+// headers and body, and the response that came back. Enough to check on paper
+// that the right values were sent and the right thing returned, without
+// opening the app. Secrets are covered unless the export was told to reveal
+// them; long bodies are truncated the same way the run report truncates them.
 //
 // It is a document, not a panel — plain black on white, no theme, laid out for
 // paper. On screen it is display:none. With `capture` it is shown off the edge
@@ -99,12 +104,15 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal, c
           const shell = s.mode === 'shell';
           const mark = s.skipped ? '–' : s.ok ? '✓' : '✗';
           const cls = s.skipped ? 'skip' : s.ok ? 'ok' : 'err';
-          // What actually went out, resolved — not what the step is configured
-          // to send. On a report they can differ, and the one that ran is the
-          // one being reported on.
-          const what = shell
-            ? scrub(s.command || '')
-            : s.request && `${s.request.method} ${scrub(maskUrl(s.request.url, reveal))}`;
+          // What actually went out and what came back, resolved — not what the
+          // step is configured to send. On a report they can differ, and the
+          // pair that ran is the pair being reported on.
+          const req = s.request;
+          const reqBody = req?.body
+            ? maskJsonBody(prettify(req.body, req.headers), reveal) : '';
+          const res = s.response;
+          const resBody = res && res.bodyEncoding !== 'base64' && res.body
+            ? maskJsonBody(prettify(res.body, res.headers), reveal) : '';
           return (
             <li key={s.id || i} className={`pr-step ${cls}`}>
               <div className="pr-step-head">
@@ -117,13 +125,100 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal, c
                 ? <div className="pr-step-note">Skipped — {s.skipped}</div>
                 : (
                   <>
-                    {what && <div className="pr-step-what">{shell ? `$ ${what}` : what}</div>}
+                    {shell ? (
+                      <div className="pr-io">
+                        <div className="pr-io-label">Ran</div>
+                        <div className="pr-step-what">$ {scrub(s.command || '')}</div>
+                        {s.commandRaw && (
+                          <div className="pr-step-note">as typed: {scrub(s.commandRaw)}</div>
+                        )}
+                        {s.cwd && <div className="pr-step-note">in {s.cwd}</div>}
+                      </div>
+                    ) : req && (
+                      <div className="pr-io">
+                        <div className="pr-io-label">Sent</div>
+                        <div className="pr-step-what">
+                          {req.method} {scrub(maskUrl(req.url, reveal))}
+                        </div>
+                        {Object.keys(req.headers || {}).length > 0 && (
+                          <table className="pr-io-kv">
+                            <tbody>
+                              {maskHeaders(req.headers, reveal).map(([k, v]) => (
+                                <tr key={k}><th>{k}</th><td>{scrub(v)}</td></tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                        {reqBody && <pre className="pr-io-body">{scrub(reqBody)}</pre>}
+                        {req.bodyTruncated && (
+                          <div className="pr-step-note">Sent body truncated for the report.</div>
+                        )}
+                        {req.form && req.form.length > 0 && (
+                          <table className="pr-io-kv">
+                            <tbody>
+                              {req.form.map((f, k) => (
+                                <tr key={k}>
+                                  <th>{f.key}</th>
+                                  <td>{f.file ? '(file)' : scrub(f.value || '')}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
                     <div className="pr-step-facts">
                       {shell
                         ? <>exit code {s.exitCode ?? '—'}</>
                         : s.status != null && <>{s.status} {s.statusText}</>}
                       {s.timeMs != null && <span className="pr-dot"> · {duration(s.timeMs)}</span>}
                     </div>
+                    {shell ? (
+                      s.shell && (
+                        <div className="pr-io">
+                          <div className="pr-io-label">Output</div>
+                          {s.freshShell && (
+                            <div className="pr-step-note">
+                              Ran in a new shell — the one the earlier steps shared had gone.
+                            </div>
+                          )}
+                          {s.shell.stdout
+                            ? <pre className="pr-io-body">{scrub(s.shell.stdout)}</pre>
+                            : <div className="pr-step-note">No output on stdout.</div>}
+                          {s.shell.stderr && (
+                            <pre className="pr-io-body pr-io-stderr">{scrub(s.shell.stderr)}</pre>
+                          )}
+                          {s.shell.truncated && (
+                            <div className="pr-step-note">Output truncated for the report.</div>
+                          )}
+                        </div>
+                      )
+                    ) : res && (
+                      <div className="pr-io">
+                        <div className="pr-io-label">Response</div>
+                        {Object.keys(res.headers || {}).length > 0 && (
+                          <table className="pr-io-kv">
+                            <tbody>
+                              {maskHeaders(res.headers, reveal).map(([k, v]) => (
+                                <tr key={k}><th>{k}</th><td>{scrub(v)}</td></tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                        {res.bodyEncoding === 'base64' ? (
+                          <div className="pr-step-note">
+                            Binary response ({fmtSize(res.size)}) — not kept in the run report.
+                          </div>
+                        ) : (
+                          <>
+                            <pre className="pr-io-body">{scrub(resBody) || '(empty body)'}</pre>
+                            {res.truncated && (
+                              <div className="pr-step-note">Body truncated for the report.</div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                     {s.error && (
                       <div className="pr-step-note pr-error">
                         {scrub(s.error)}{s.hint ? ` — ${scrub(s.hint)}` : ''}

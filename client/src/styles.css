@@ -880,6 +880,28 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .print-report .pr-step-facts { font-size: 10pt; color: #333; margin-top: 2pt; }
 .print-report .pr-dot { color: #666; }
 .print-report .pr-step-note { font-size: 10pt; margin-top: 3pt; color: #333; }
+
+/* The call itself, under the verdict: what went out and what came back, with
+   this run's values resolved in. A reader checking that the right parameters
+   were sent reads these; a reader who only wants the verdict skims past the
+   indented block. */
+.print-report .pr-io { margin-top: 5pt; padding-left: 8pt; border-left: 1.5pt solid #ccc; }
+.print-report .pr-io-label {
+  font-size: 8.5pt; text-transform: uppercase; letter-spacing: .07em;
+  color: #666; font-weight: 600; margin-bottom: 2pt;
+}
+.print-report .pr-io-kv { border-collapse: collapse; width: 100%; font-size: 9pt; margin: 2pt 0; }
+.print-report .pr-io-kv th, .print-report .pr-io-kv td {
+  text-align: left; vertical-align: top; padding: 1pt 6pt 1pt 0; font-weight: 400;
+  font-family: 'SF Mono', Menlo, Consolas, monospace; word-break: break-all;
+}
+.print-report .pr-io-kv th { width: 26%; color: #555; }
+.print-report .pr-io-body {
+  font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 9pt; line-height: 1.4;
+  white-space: pre-wrap; word-break: break-word; color: #222;
+  background: #f4f4f4; padding: 4pt 6pt; margin: 2pt 0; border-radius: 2pt;
+}
+.print-report .pr-io-stderr { background: #f0f0f0; color: #000; }
 .print-report .pr-checks { list-style: none; margin: 4pt 0 0; padding: 0; font-size: 10pt; }
 .print-report .pr-checks li { margin-top: 1pt; }
 /* Ink, not colour: a report is as likely to come off a mono printer, and a

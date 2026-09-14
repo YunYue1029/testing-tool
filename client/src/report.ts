@@ -23,6 +23,18 @@ export function reportVars(vars: Vars | undefined, reveal: boolean): Array<[stri
   );
 }
 
+// Header rows for a report, secret-looking ones covered by name — Authorization,
+// Cookie, Set-Cookie, X-API-Key. The values themselves are struck out elsewhere
+// too (scrubber), but a bearer token the run never captured as a var has only
+// its header name to give it away.
+export function maskHeaders(
+  headers: Record<string, string> | undefined, reveal: boolean,
+): Array<[string, string]> {
+  return Object.entries(headers || {}).map(
+    ([k, v]) => [k, reveal || !looksSecret(k) ? v : MASK] as [string, string],
+  );
+}
+
 // A token handed over in a query string is as much a secret as one in a header,
 // and the url is the line of a report most likely to be read over a shoulder.
 export function maskUrl(url: string, reveal: boolean): string {
@@ -35,6 +47,30 @@ export function maskUrl(url: string, reveal: boolean): string {
     return looksSecret(key) ? `${key}=${MASK}` : pair;
   }).join('&');
   return `${url.slice(0, cut)}?${query}`;
+}
+
+// A request or response body printed in full: a login payload carries a
+// password, a token refresh carries the old token, and neither was ever
+// captured under a name, so the scrubber has nothing to match. Mask by key
+// instead, the same rule the url and the headers use — walk a JSON body and
+// cover the value of any secret-looking key. A body that is not JSON is left
+// as it is; the scrubber still passes over it for the values that were named.
+export function maskJsonBody(body: string, reveal: boolean): string {
+  if (reveal || !body) return body;
+  let parsed: unknown;
+  try { parsed = JSON.parse(body); } catch { return body; }
+  const walk = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === 'object') {
+      return Object.fromEntries(
+        Object.entries(v as Record<string, unknown>).map(
+          ([k, val]) => [k, looksSecret(k) && val != null && val !== '' ? MASK : walk(val)],
+        ),
+      );
+    }
+    return v;
+  };
+  return JSON.stringify(walk(parsed), null, 2);
 }
 
 // An assertion reads `body.access_token expected eq "eyJ…", got "eyJ…"`. That
