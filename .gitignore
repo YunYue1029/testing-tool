@@ -15,3 +15,6 @@ data/uploads/
 *.log
 .DS_Store
 .claude/settings.local.json
+# Working notes — plans and PR descriptions drafted alongside the work. They
+# belong to whoever wrote them, not in the history.
+z/
