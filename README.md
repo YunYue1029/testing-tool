@@ -81,19 +81,19 @@ relying on node's built-in type stripping rather than a build step.
 
 ```bash
 npm run install:all   # install server + client + MCP deps
-npm run dev           # server on :3000, Vite on :5173, MCP on :8765
+npm run dev           # server on :7620, Vite on :7621, MCP on :8765
 ```
 
-Open <http://localhost:5173> for development (it proxies `/api` to the server).
+Open <http://localhost:7621> for development (it proxies `/api` to the server).
 
 ### Production build
 
 ```bash
 npm run build   # builds client into client/dist
-npm start       # serves API + frontend on :3000
+npm start       # serves API + frontend on :7620
 ```
 
-Then open <http://localhost:3000>.
+Then open <http://localhost:7620>.
 
 ### Tests
 
@@ -166,7 +166,7 @@ Notes:
   the LAN.
 - Requests carrying a browser `Origin` other than localhost are refused, so a web
   page you happen to have open cannot drive the tools over your loopback.
-- `TESTING_TOOL_URL` points it at the backend (default `http://localhost:3000`).
+- `TESTING_TOOL_URL` points it at the backend (default `http://localhost:7620`).
   The old `API_TEST_URL` is still read as a fallback.
 
 ### Alternative: stdio

@@ -1,5 +1,5 @@
 // Thin HTTP client for the testing-tool backend (server/index.ts).
-// Base URL comes from TESTING_TOOL_URL (default http://localhost:3000).
+// Base URL comes from TESTING_TOOL_URL (default http://localhost:7620).
 // API_TEST_URL is the pre-rename name, still read so existing shells and
 // client configs keep working.
 //
@@ -13,7 +13,7 @@ import type {
 } from '../server/types.ts';
 
 const BASE = (
-  process.env.TESTING_TOOL_URL || process.env.API_TEST_URL || 'http://localhost:3000'
+  process.env.TESTING_TOOL_URL || process.env.API_TEST_URL || 'http://localhost:7620'
 ).replace(/\/+$/, '');
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {

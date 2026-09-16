@@ -11,7 +11,7 @@
     "test": "node --test \"server/*.test.ts\"",
     "typecheck": "tsc --noEmit && npm --prefix client run typecheck && npm --prefix mcp run typecheck",
     "dev": "concurrently -k -n server,client,mcp -c blue,green,magenta \"npm run dev:server\" \"npm run dev:client\" \"npm run dev:mcp\"",
-    "dev:server": "PORT=3000 node --watch server/index.ts",
+    "dev:server": "PORT=7620 node --watch server/index.ts",
     "dev:client": "npm --prefix client run dev",
     "dev:mcp": "MCP_HTTP_PORT=8765 node --watch mcp/server.ts",
     "build": "npm --prefix client install && npm --prefix client run build",

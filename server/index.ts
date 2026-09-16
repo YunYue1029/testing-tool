@@ -16,7 +16,7 @@ import type {
 } from './types.ts';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 7620;
 // Loopback by default. /api/run happily executes a post-response script that
 // came in with the request (see runScript in runner.ts — vm is not a security
 // boundary), so anyone who can reach this port can run code as this process.
