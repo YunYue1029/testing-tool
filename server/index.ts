@@ -9,6 +9,7 @@ import {
 import { convertPostmanCollection, convertPostmanEnvironment } from './postman.ts';
 import { SendError, runRequest, runShellRequest } from './runner.ts';
 import { runFlow } from './flow.ts';
+import { folderWithDescendants } from './resolve.ts';
 import type {
   Collection, CollectionInput, Environment, EnvironmentInput, Flow, FlowInput,
   Folder, SavedRequest,
@@ -174,7 +175,7 @@ app.patch('/api/flow-folders/:fid', asyncH(async (req, res) => {
     // Filing a folder inside its own subtree cuts the branch off the tree: it
     // stays in the file, reachable from no root. Checked here, inside the
     // lock, because the tree it has to be true of is the one being written.
-    if (parentId && withDescendants(cur, req.params.fid).includes(parentId)) {
+    if (parentId && folderWithDescendants(cur, req.params.fid).includes(parentId)) {
       cycle = true;
       return null;
     }
@@ -199,7 +200,7 @@ app.patch('/api/flow-folders/:fid', asyncH(async (req, res) => {
 // there any more.
 app.delete('/api/flow-folders/:fid', asyncH(async (req, res) => {
   const folders = await flowFolders.list();
-  const doomed = withDescendants(folders, req.params.fid);
+  const doomed = folderWithDescendants(folders, req.params.fid);
   const inside = (await flows.list()).filter((f) => doomed.includes(f.folderId as string));
   for (const f of inside) await flows.remove(f.id);
   const list = await flowFolders.update((cur) => cur.filter((f) => !doomed.includes(f.id)));
@@ -245,19 +246,6 @@ app.delete('/api/collections/:id', asyncH(async (req, res) => {
 // rather than replacing it. All of them answer with the updated collection.
 const updated = (res: Response) => (c: Collection | null) =>
   (c ? res.json(c) : res.status(404).json({ error: 'Not found' }));
-
-// A folder plus every folder nested beneath it.
-function withDescendants(folders: Folder[] | undefined, rootId: string): string[] {
-  const ids = [rootId];
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const f of folders || []) {
-      if (ids.includes(f.parentId as string) && !ids.includes(f.id)) { ids.push(f.id); grew = true; }
-    }
-  }
-  return ids;
-}
 
 // Collection metadata only — never requests or folders, which have their own
 // endpoints; accepting them here would reopen the whole-document overwrite.
@@ -336,7 +324,7 @@ app.patch('/api/collections/:id/folders/:fid', asyncH(async (req, res) => {
 // out here so the whole cascade lands as one write.
 app.delete('/api/collections/:id/folders/:fid', asyncH(async (req, res) => {
   const c = await collections.update(req.params.id, (cur) => {
-    const doomed = withDescendants(cur.folders || [], req.params.fid);
+    const doomed = folderWithDescendants(cur.folders || [], req.params.fid);
     return {
       ...cur,
       folders: (cur.folders || []).filter((f) => !doomed.includes(f.id)),

@@ -11,5 +11,12 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "../server/types.ts"]
+  "include": [
+    "src/**/*.ts", "src/**/*.tsx", "vite.config.ts",
+    // Type-only, as before — plus resolve.ts, whose functions the client now
+    // imports outright rather than keeping a second copy of. Checked here
+    // without node's types, so a node built-in creeping into it fails this
+    // typecheck instead of the bundle.
+    "../server/types.ts", "../server/resolve.ts"
+  ]
 }

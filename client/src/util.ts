@@ -1,9 +1,21 @@
-import type { Folder } from './types.ts';
+// The client's half of the request rules: the pieces only the editor needs —
+// empty rows, bringing a stored request up to shape, describing auth for the UI.
+// The rules that decide what actually gets sent live in server/resolve.ts and
+// are re-exported below, so what you see previewed and what the server builds
+// cannot drift apart.
 import type {
-  Auth, AuthDescription, AuthForm, AuthType, Collection, CollectionAuth,
-  FormRow, HeaderPair, HttpRequest, InlineRequest, Overrides, RequestBody, Row,
-  SavedRequest, ShellRequest, Vars,
+  Auth, AuthDescription, AuthForm, Collection, CollectionAuth, FormRow,
+  HttpRequest, InlineRequest, Overrides, RequestBody, Row, SavedRequest,
+  ShellRequest, Vars,
 } from './types.ts';
+import { authHeader, folderPath, requestAuthType, substitute } from '../../server/resolve.ts';
+
+// Re-exported so the rest of the client goes on importing them from './util'.
+export {
+  VAR_RE, DEFAULT_BASE_URL, substitute, rowsToObject, requestVars, collapseSlashes,
+  folderChain, folderPath, folderWithDescendants, dyUrl, composeUrl, buildUrl,
+  authHeader, requestAuthType, applyCollectionBaseUrl,
+} from '../../server/resolve.ts';
 
 export function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -37,52 +49,11 @@ export function fitToContent(el: HTMLElement | null): void {
   el.style.height = `${el.scrollHeight}px`;
 }
 
-// Matches {{var}} tokens; group 1 is the variable name.
-export const VAR_RE = /\{\{\s*([\w.-]+)\s*\}\}/g;
-
-// Shared default for {{base_url}} when no environment defines it — the API
-// under test, assumed to be on this machine's port 8000. An environment's own
-// base_url still overrides this. Keep in step with server/resolve.ts.
-export const DEFAULT_BASE_URL = 'http://localhost:8000';
-
-// Replace {{var}} tokens using the given variables map.
-export function substitute(str: string, vars: Vars): string;
-export function substitute(str: string | null | undefined, vars: Vars): string | null | undefined;
-export function substitute(str: string | null | undefined, vars: Vars): string | null | undefined {
-  if (!str) return str;
-  return String(str).replace(VAR_RE, (m, key: string) =>
-    Object.prototype.hasOwnProperty.call(vars, key) ? vars[key]! : m
-  );
-}
-
 // Names of the {{var}} tokens substitution left behind — i.e. the variables
 // the active environment doesn't define. Builds its own regex per call: VAR_RE
 // carries /g state, so reusing it across calls skips matches.
 export function unresolvedVarNames(str: string | null | undefined): string[] {
   return [...String(str || '').matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)].map((m) => m[1]!);
-}
-
-// Convert an array of {key,value,enabled} rows into an object of enabled entries.
-export function rowsToObject(rows: Row[] | undefined, vars: Vars = {}): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const r of rows || []) {
-    if (r.enabled === false) continue;
-    if (!r.key) continue;
-    out[substitute(r.key, vars)] = substitute(r.value, vars);
-  }
-  return out;
-}
-
-// A request's own variable values, as {key: value} — see requestVars in
-// server/resolve.ts, which is the copy that decides what actually gets sent.
-export function requestVars(request: { vars?: Row[] } | null | undefined): Vars {
-  const out: Vars = {};
-  for (const r of (request && request.vars) || []) {
-    if (r.enabled === false) continue;
-    if (!r.key || r.value == null || r.value === '') continue;
-    out[r.key] = r.value;
-  }
-  return out;
 }
 
 // Every {{token}} this request mentions, deduped. dy_url and base_url are left
@@ -113,21 +84,6 @@ export function usedVarNames(request: SavedRequest): string[] {
   names.delete('dy_url');
   names.delete('base_url');
   return [...names];
-}
-
-// Collapse runs of duplicate slashes ("a.com//x" -> "a.com/x") while keeping
-// the "://" after the scheme intact.
-export function collapseSlashes(u: string | null | undefined): string {
-  return String(u || '').replace(/([^:])\/{2,}/g, '$1/');
-}
-
-export function buildUrl(rawUrl: string, paramRows: Row[] | undefined, vars: Vars): string {
-  const url = collapseSlashes(substitute(rawUrl, vars));
-  const params = rowsToObject(paramRows, vars);
-  const keys = Object.keys(params);
-  if (keys.length === 0) return url;
-  const qs = keys.map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k]!)}`).join('&');
-  return url.includes('?') ? `${url}&${qs}` : `${url}?${qs}`;
 }
 
 export function emptyRow(): Row {
@@ -248,31 +204,6 @@ export function withBodyOverride(
 
 export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
-// ---- Folders (a tree inside a collection via parentId) ----
-
-// The folders from the collection root down to `folderId` (root-first).
-export function folderChain(
-  folders: Folder[] | undefined, folderId: string | null | undefined,
-): Folder[] {
-  const byId = new Map((folders || []).map((f) => [f.id, f]));
-  const chain: Folder[] = [];
-  const seen = new Set<string>();
-  let cur = folderId ? byId.get(folderId) : null;
-  while (cur && !seen.has(cur.id)) {
-    seen.add(cur.id);
-    chain.unshift(cur);
-    cur = cur.parentId ? byId.get(cur.parentId) : null;
-  }
-  return chain;
-}
-
-// "Parent / Child" name path for a folder id (empty string for the root).
-export function folderPath(
-  folders: Folder[] | undefined, folderId: string | null | undefined,
-): string {
-  return folderChain(folders, folderId).map((f) => f.name).join(' / ');
-}
-
 // A flow step's own request, for an endpoint that isn't worth saving anywhere.
 // Shared by the panel that builds a step and the dialog that edits one.
 export function emptyInlineRequest(): InlineRequest {
@@ -313,79 +244,6 @@ export function requestGroups(
 // command, which is the only thing it has to be sorted or searched by.
 function urlOf(r: SavedRequest): string {
   return isShellTest(r) ? (r.command || '') : (r.url || '');
-}
-
-// A folder plus every folder under it — the subtree a delete would take.
-export function folderWithDescendants(
-  folders: Folder[] | undefined, rootId: string,
-): string[] {
-  const ids = [rootId];
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const f of folders || []) {
-      if (ids.includes(f.parentId as string) && !ids.includes(f.id)) { ids.push(f.id); grew = true; }
-    }
-  }
-  return ids;
-}
-
-// What {{dy_url}} expands to for a request in the given folder:
-//   {{base_url}} / folder1 / folder2 …  (the folder names form the path)
-export function dyUrl(
-  folders: Folder[] | undefined, folderId: string | null | undefined,
-): string {
-  const segs = folderChain(folders, folderId)
-    .map((f) => (f.name || '').trim().replace(/^\/+|\/+$/g, ''))
-    .filter(Boolean);
-  return ['{{base_url}}', ...segs].join('/');
-}
-
-// Override {{base_url}} with the collection's own baseUrl, when set. The
-// collection value may itself contain {{vars}} (resolved from the current
-// vars), so an environment can still steer it indirectly. Returns a new map.
-export function applyCollectionBaseUrl(
-  vars: Vars, collection: { baseUrl?: string } | null | undefined,
-): Vars {
-  const raw = collection && typeof collection.baseUrl === 'string' ? collection.baseUrl.trim() : '';
-  if (!raw) return vars;
-  return { ...vars, base_url: substitute(raw, vars) };
-}
-
-// Resolve a collection's auth setting into the header it should add, as
-// { name, value } (value may still contain {{tokens}} — substitute later), or
-// null when auth is off. Accepts the structured object or, for back-compat, a
-// plain string that was the raw Authorization value.
-export function authHeader(auth: CollectionAuth | Auth | null | undefined): HeaderPair | null {
-  if (!auth) return null;
-  if (typeof auth === 'string') {
-    return auth.trim() ? { name: 'Authorization', value: auth } : null;
-  }
-  switch (auth.type) {
-    case 'bearer': {
-      const token = (auth.token || '').trim();
-      if (!token) return null;
-      const prefix = auth.prefix != null ? auth.prefix : 'Bearer';
-      return { name: 'Authorization', value: prefix ? `${prefix} ${token}` : token };
-    }
-    case 'apikey': {
-      const name = (auth.header || '').trim();
-      const value = auth.value || '';
-      if (!name || !value.trim()) return null;
-      return { name, value };
-    }
-    default:
-      return null;
-  }
-}
-
-// Which of the two auth settings a request runs under: 'inherit' | 'none' |
-// 'bearer' | 'apikey'. `noAuth: true` is the older spelling of 'none', on
-// requests saved before a request could carry auth of its own.
-export function requestAuthType(request: SavedRequest | null | undefined): AuthType {
-  const type = request && 'auth' in request && request.auth && request.auth.type;
-  if (type) return type;
-  return request && 'noAuth' in request && request.noAuth ? 'none' : 'inherit';
 }
 
 // The editable state behind an auth picker. Every type's fields are kept while
@@ -460,23 +318,4 @@ export function describeAuth(
   const value = substitute(info.expr, vars);
   const missing = unresolvedVarNames(value);
   return { ...info, resolved: !!value.trim() && missing.length === 0, missing };
-}
-
-// Expand the {{dy_url}} token in a request URL to {{base_url}} + folder path.
-// If the URL has no {{dy_url}} token it is returned unchanged, so folders only
-// affect a request that explicitly opts in with {{dy_url}}.
-export function composeUrl(
-  folders: Folder[] | undefined, folderId: string | null | undefined, requestUrl: string,
-): string;
-export function composeUrl(
-  folders: Folder[] | undefined, folderId: string | null | undefined,
-  requestUrl: string | undefined,
-): string | undefined;
-export function composeUrl(
-  folders: Folder[] | undefined, folderId: string | null | undefined,
-  requestUrl: string | undefined,
-): string | undefined {
-  const u = requestUrl || '';
-  if (!/\{\{\s*dy_url\s*\}\}/.test(u)) return requestUrl;
-  return u.replace(/\{\{\s*dy_url\s*\}\}/g, dyUrl(folders, folderId));
 }

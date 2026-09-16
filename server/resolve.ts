@@ -1,10 +1,13 @@
-// {{var}} resolution and request building.
+// {{var}} resolution and request building — the one copy of these rules.
 //
-// This is the authoritative copy: whatever actually gets sent is built here.
-// The client keeps its own copy of these rules (client/src/util.ts) purely to
-// preview a URL while you type, which can't afford a round trip per keystroke —
-// but nothing is sent from that path, so the two cannot disagree about what
-// left the machine.
+// Whatever actually gets sent is built here, and the client imports these same
+// functions (via client/src/util.ts) to preview a URL while you type, which
+// can't afford a round trip per keystroke. It used to keep its own copy; two
+// copies could disagree about what would leave the machine, so now there is one.
+//
+// Which is why this file stays clear of node built-ins: it is bundled into the
+// browser. client/tsconfig.json includes it without node's types, so reaching
+// for `node:fs` here fails the client typecheck rather than the client build.
 import type {
   Auth, AuthType, Collection, CollectionAuth, Environment, Folder, HeaderPair,
   Row, RunnableRequest, Vars,
@@ -76,6 +79,19 @@ function folderChain(folders: Folder[] | undefined, folderId: string | null | un
 // "Parent / Child" name path for a folder id (empty string for the root).
 function folderPath(folders: Folder[] | undefined, folderId: string | null | undefined): string {
   return folderChain(folders, folderId).map((f) => f.name).join(' / ');
+}
+
+// A folder plus every folder under it — the subtree a delete would take.
+function folderWithDescendants(folders: Folder[] | undefined, rootId: string): string[] {
+  const ids = [rootId];
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const f of folders || []) {
+      if (ids.includes(f.parentId as string) && !ids.includes(f.id)) { ids.push(f.id); grew = true; }
+    }
+  }
+  return ids;
 }
 
 // What {{dy_url}} expands to for a request in the given folder:
@@ -198,6 +214,6 @@ function envVars(
 
 export {
   VAR_RE, DEFAULT_BASE_URL, substitute, rowsToObject, requestVars, collapseSlashes,
-  folderChain, folderPath, dyUrl, composeUrl, buildUrl, authHeader,
+  folderChain, folderPath, folderWithDescendants, dyUrl, composeUrl, buildUrl, authHeader,
   requestAuthType, requestAuthHeader, applyCollectionBaseUrl, envVars,
 };
