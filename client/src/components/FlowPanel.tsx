@@ -5,7 +5,7 @@ import AddStepModal from './AddStepModal';
 import StepEditModal from './StepEditModal';
 import FlowReportModal from './FlowReportModal';
 import FlowReportDoc from './FlowReportDoc';
-import { uid, prettify, fmtSize, emptyInlineRequest, fitToContent } from '../util';
+import { newId, prettify, fmtSize, emptyInlineRequest, fitToContent } from '../util';
 import type {
   Collection, Flow, FlowShell, InlineRequest, Step, StepReport,
 } from '../types.ts';
@@ -49,7 +49,7 @@ function emptyStep(): Step {
     // Direct, because a step added by name alone has nothing picked yet and
     // Direct is the one you can finish by typing — the other two need a
     // request chosen or a command written before they run at all.
-    id: uid(), mode: 'inline', collectionId: null, requestId: null,
+    id: newId(), mode: 'inline', collectionId: null, requestId: null,
     request: emptyInlineRequest(),
     command: '',
     // Spelled out rather than left off: the store normalises a missing cwd to

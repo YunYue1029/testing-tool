@@ -21,15 +21,12 @@ import { z } from 'zod';
 import type { ZodRawShape } from 'zod';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { api } from './api.ts';
+import { newId } from '../server/ids.ts';
 import { folderPath, requestAuthType } from '../server/resolve.ts';
 import type {
   Auth, Collection, Folder, HttpRequest, HttpResponse, InlineRequest,
   RequestBody, Row, SavedRequest, ShellRequest, ShellResponse,
 } from '../server/types.ts';
-
-function newId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
 
 // ---- display helpers ----
 // Nothing here decides what gets sent. Every tool that sends something posts to

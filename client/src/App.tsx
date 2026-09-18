@@ -14,7 +14,7 @@ import { api } from './api';
 import ShellTestPanel from './components/ShellTestPanel';
 import {
   newRequest, newShellTest, isShellTest, normalizeRequest, substitute,
-  uid, folderPath, folderWithDescendants, composeUrl, dyUrl, DEFAULT_BASE_URL,
+  newId, folderPath, folderWithDescendants, composeUrl, dyUrl, DEFAULT_BASE_URL,
   applyCollectionBaseUrl, describeAuth, requestVars,
 } from './util';
 import type {
@@ -538,7 +538,7 @@ export default function App() {
   async function newFolder(col: Collection, parentId: string | null = null) {
     const name = prompt('Folder name:', 'New Folder');
     if (!name) return;
-    await api.createFolder(col.id, { id: uid(), name, parentId: parentId || null });
+    await api.createFolder(col.id, { id: newId(), name, parentId: parentId || null });
     await refresh();
   }
 

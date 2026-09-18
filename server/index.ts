@@ -4,8 +4,9 @@ import path from 'path';
 import fs from 'fs';
 import {
   ensureDirs, collections, environments, flows, flowFolders, migrateFlowGroups,
-  baseUrls, files, revision, newId, DATA_DIR,
+  baseUrls, files, revision, DATA_DIR,
 } from './store.ts';
+import { newId } from './ids.ts';
 import { convertPostmanCollection, convertPostmanEnvironment } from './postman.ts';
 import { SendError, runRequest, runShellRequest } from './runner.ts';
 import { runFlow } from './flow.ts';

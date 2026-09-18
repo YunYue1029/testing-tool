@@ -8,6 +8,7 @@ import type {
   FileMeta, Flow, FlowInput, Folder, InlineBodyType, InlineRequest, Row,
   SavedRequest, Step, StepInput, StoredFile,
 } from './types.ts';
+import { newId } from './ids.ts';
 
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
@@ -35,10 +36,6 @@ async function ensureDirs(): Promise<void> {
   await fs.mkdir(ENVIRONMENTS_DIR, { recursive: true });
   await fs.mkdir(UPLOADS_DIR, { recursive: true });
   await fs.mkdir(FLOWS_DIR, { recursive: true });
-}
-
-function newId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
 // What comes back out of a JSON file is whatever was written into it; the
@@ -487,5 +484,5 @@ const files = {
 
 export {
   ensureDirs, collections, environments, flows, flowFolders, migrateFlowGroups,
-  baseUrls, files, revision, newId, errCode, DATA_DIR,
+  baseUrls, files, revision, errCode, DATA_DIR,
 };

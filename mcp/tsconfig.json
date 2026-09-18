@@ -4,5 +4,5 @@
     "lib": ["es2023"],
     "types": ["node"]
   },
-  "include": ["**/*.ts", "../server/types.ts", "../server/resolve.ts"]
+  "include": ["**/*.ts", "../server/types.ts", "../server/resolve.ts", "../server/ids.ts"]
 }

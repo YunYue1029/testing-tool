@@ -9,6 +9,9 @@ import type {
   ShellRequest, Vars,
 } from './types.ts';
 import { authHeader, folderPath, requestAuthType, substitute } from '../../server/resolve.ts';
+import { newId } from '../../server/ids.ts';
+
+export { newId } from '../../server/ids.ts';
 
 // Re-exported so the rest of the client goes on importing them from './util'.
 export {
@@ -16,10 +19,6 @@ export {
   folderChain, folderPath, folderWithDescendants, dyUrl, composeUrl, buildUrl,
   authHeader, requestAuthType, applyCollectionBaseUrl,
 } from '../../server/resolve.ts';
-
-export function uid(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
 
 // ---- Showing a response (shared by the response panel and a flow's steps) ----
 
@@ -91,7 +90,7 @@ export function emptyRow(): Row {
 }
 
 export function emptyBody(name = 'Default'): RequestBody {
-  return { id: uid(), name, content: '' };
+  return { id: newId(), name, content: '' };
 }
 
 // One multipart/form-data field. `type` is 'text' or 'file'; a file row carries
@@ -103,7 +102,7 @@ export function emptyFormRow(): FormRow {
 export function newRequest(): HttpRequest {
   const body = emptyBody();
   return {
-    id: uid(),
+    id: newId(),
     name: 'New Request',
     method: 'GET',
     url: '',
@@ -126,7 +125,7 @@ export function newRequest(): HttpRequest {
 // a flow can point a step at it exactly as it points one at a request.
 export function newShellTest(): ShellRequest {
   return {
-    id: uid(),
+    id: newId(),
     name: 'New Shell Test',
     kind: 'shell',
     command: '',

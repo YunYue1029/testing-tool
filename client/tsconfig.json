@@ -17,6 +17,6 @@
     // imports outright rather than keeping a second copy of. Checked here
     // without node's types, so a node built-in creeping into it fails this
     // typecheck instead of the bundle.
-    "../server/types.ts", "../server/resolve.ts"
+    "../server/types.ts", "../server/resolve.ts", "../server/ids.ts"
   ]
 }

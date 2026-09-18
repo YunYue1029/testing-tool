@@ -16,6 +16,7 @@ import type {
   CollectionAuth, CollectionInput, EnvironmentInput, Folder, FormRow,
   HttpRequest, Row,
 } from './types.ts';
+import { newId } from './ids.ts';
 
 // ---- The slice of Postman's export format this reads ----
 // Everything is optional: an export is someone else's file, and the whole job
@@ -75,10 +76,6 @@ export interface ImportedCollection extends CollectionInput {
   auth: CollectionAuth;
   folders: Folder[];
   requests: HttpRequest[];
-}
-
-function uid(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
 function row(key: string | undefined, value: unknown, enabled = true): Row {
@@ -160,9 +157,9 @@ function convertRequest(item: PmItem, folderId: string | null): HttpRequest {
 
   params.push(row('', ''));
   headers.push(row('', ''));
-  const body = { id: uid(), name: 'Default', content };
+  const body = { id: newId(), name: 'Default', content };
   return {
-    id: uid(),
+    id: newId(),
     name: item.name || 'Untitled',
     method: (r.method || 'GET').toUpperCase(),
     url,
@@ -194,7 +191,7 @@ function walk(
 ): void {
   for (const it of items || []) {
     if (Array.isArray(it.item)) {
-      const folder: Folder = { id: uid(), name: it.name || 'Untitled', parentId };
+      const folder: Folder = { id: newId(), name: it.name || 'Untitled', parentId };
       out.folders.push(folder);
       walk(it.item, folder.id, [...names, folder.name], out);
     } else if (it.request) {
