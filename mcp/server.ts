@@ -21,8 +21,9 @@ import { z } from 'zod';
 import type { ZodRawShape } from 'zod';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { api } from './api.ts';
+import { folderPath, requestAuthType } from '../server/resolve.ts';
 import type {
-  Auth, AuthType, Collection, Folder, HttpRequest, HttpResponse, InlineRequest,
+  Auth, Collection, Folder, HttpRequest, HttpResponse, InlineRequest,
   RequestBody, Row, SavedRequest, ShellRequest, ShellResponse,
 } from '../server/types.ts';
 
@@ -32,24 +33,11 @@ function newId(): string {
 
 // ---- display helpers ----
 // Nothing here decides what gets sent. Every tool that sends something posts to
-// the backend's /api/run, so server/resolve.js is the only place
-// {{vars}}, {{dy_url}} and auth are worked out. This file used to carry a copy
-// of those rules, which is exactly how it ended up sending something different
-// from the app.
-
-// "Parent / Child" name path for a folder id (empty at the collection root).
-function folderPath(folders: Folder[] | undefined, folderId: string | null | undefined): string {
-  const byId = new Map((folders || []).map((f) => [f.id, f]));
-  const names: string[] = [];
-  const seen = new Set<string>();
-  let cur = folderId ? byId.get(folderId) : null;
-  while (cur && !seen.has(cur.id)) {
-    seen.add(cur.id);
-    names.unshift(cur.name);
-    cur = cur.parentId ? byId.get(cur.parentId) : null;
-  }
-  return names.join(' / ');
-}
+// the backend's /api/run, so server/resolve.ts is the only place {{vars}},
+// {{dy_url}} and auth are worked out. This file used to carry a copy of those
+// rules, which is exactly how it ended up sending something different from the
+// app; folderPath and requestAuthType are imported from there above for the
+// same reason, being the two it still needs in order to describe a request.
 
 // Stored rows as {key: value}, {{vars}} left as they are — this reports what is
 // saved, not what would be sent.
@@ -60,14 +48,6 @@ function rowsToPlainObject(rows: Row[] | undefined): Record<string, string> {
     out[r.key] = r.value;
   }
   return out;
-}
-
-// Which auth a stored request runs under. `noAuth: true` is the older spelling
-// of type 'none', on requests saved before a request could carry its own.
-function authType(request: SavedRequest | null | undefined): AuthType {
-  const type = request && 'auth' in request && request.auth && request.auth.type;
-  if (type) return type;
-  return request && 'noAuth' in request && request.noAuth ? 'none' : 'inherit';
 }
 
 // The row shape the app stores. `trailingBlank` adds the empty row the UI keeps
@@ -507,7 +487,7 @@ function createServer() {
       vars: rowsToPlainObject(r.vars),
       // Only when the request does not simply inherit — otherwise a login here
       // looks identical to one that carries the collection's token.
-      ...(authType(r) === 'inherit' ? {} : { auth: r.auth || { type: 'none' } }),
+      ...(requestAuthType(r) === 'inherit' ? {} : { auth: r.auth || { type: 'none' } }),
       script: r.script || '',
     };
   });
@@ -806,7 +786,7 @@ function createServer() {
       // boolean sitting next to the type that replaced it.
       auth: request.auth !== undefined
         ? (request.auth as Auth)
-        : (prev && prev.auth ? prev.auth : { type: authType(prev) } as Auth),
+        : (prev && prev.auth ? prev.auth : { type: requestAuthType(prev) } as Auth),
       noAuth: undefined,
       // The script the backend runs after the response. Omitting it keeps the
       // one already saved, the way every other field here behaves — pass '' to
