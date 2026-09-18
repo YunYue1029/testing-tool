@@ -795,6 +795,33 @@ function createServer() {
     return { collection_id: saved.id, request_id: record.id, test: record };
   });
 
+  tool('delete_request', {
+    title: 'Delete a request',
+    description:
+      'Delete a saved request or shell test from a collection. Permanent — there is no undo. ' +
+      'A flow step pointing at it stays in its flow and fails as missing when run; used_by_flows ' +
+      'lists those steps so they can be repointed or removed with save_flow.',
+    inputSchema: { collection_id: z.string(), request_id: z.string() },
+  }, async ({ collection_id, request_id }) => {
+    const c = await api.getCollection(collection_id);
+    if (!c) throw new Error(`Collection "${collection_id}" not found`);
+    // Checked here because the backend would answer a wrong id with success.
+    const target = (c.requests || []).find((r) => r.id === request_id);
+    if (!target) throw new Error(`Request "${request_id}" not found in collection "${c.name}"`);
+    const saved = await api.deleteRequest(c.id, target.id);
+    const flows = await api.listFlows();
+    const usedBy = flows.flatMap((f) => (f.steps || [])
+      .filter((s) => s.collectionId === c.id && s.requestId === target.id)
+      .map((s) => ({ flow_id: f.id, flow: f.name, step_id: s.id, step: s.name })));
+    return {
+      collection_id: saved.id,
+      deleted_request_id: target.id,
+      name: target.name,
+      request_count: (saved.requests || []).length,
+      used_by_flows: usedBy,
+    };
+  });
+
   // =====================================================================
   // Flows
   // =====================================================================

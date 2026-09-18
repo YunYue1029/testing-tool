@@ -75,6 +75,10 @@ export const api = {
     request<Collection>('PATCH', `/api/collections/${encodeURIComponent(id)}`, fields),
   putRequest: (colId: string, r: SavedRequest) =>
     request<Collection>('PUT', `/api/collections/${encodeURIComponent(colId)}/requests/${encodeURIComponent(r.id)}`, r),
+  // Answers with the collection either way: the backend filters the request
+  // out, so an id that was never there is not an error to it.
+  deleteRequest: (colId: string, requestId: string) =>
+    request<Collection>('DELETE', `/api/collections/${encodeURIComponent(colId)}/requests/${encodeURIComponent(requestId)}`),
   createFolder: (colId: string, folder: Folder) =>
     request<Collection>('POST', `/api/collections/${encodeURIComponent(colId)}/folders`, folder),
 
