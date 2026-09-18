@@ -822,6 +822,62 @@ function createServer() {
     };
   });
 
+  tool('delete_folder', {
+    title: 'Delete a folder',
+    description:
+      'Delete a folder from a collection, taking the folders nested inside it and every request filed ' +
+      'in any of them. Permanent — there is no undo, and it removes more than it names. The reply ' +
+      'lists what actually went. To keep the requests, move them out first with save_request ' +
+      'request.folder_id.',
+    inputSchema: { collection_id: z.string(), folder_id: z.string() },
+  }, async ({ collection_id, folder_id }) => {
+    const before = await api.getCollection(collection_id);
+    if (!before) throw new Error(`Collection "${collection_id}" not found`);
+    const target = (before.folders || []).find((f) => f.id === folder_id);
+    if (!target) throw new Error(`Folder "${folder_id}" not found in collection "${before.name}"`);
+    const path = folderPath(before.folders, folder_id);
+    const after = await api.deleteFolder(before.id, folder_id);
+    // Reported by comparing before with after rather than by working the
+    // subtree out again here, so this says what the backend really removed.
+    const goneFolders = (before.folders || [])
+      .filter((f) => !(after.folders || []).some((g) => g.id === f.id));
+    const goneRequests = (before.requests || [])
+      .filter((r) => !(after.requests || []).some((x) => x.id === r.id));
+    return {
+      collection_id: after.id,
+      deleted_folder_id: folder_id,
+      path,
+      deleted_folders: goneFolders.map((f) => ({ folder_id: f.id, name: f.name })),
+      deleted_requests: goneRequests.map((r) => ({ request_id: r.id, name: r.name })),
+    };
+  });
+
+  tool('delete_collection', {
+    title: 'Delete a collection',
+    description:
+      'Delete a whole collection — every folder, request and shell test in it. Permanent — there is ' +
+      'no undo, and this is the widest delete here: prefer delete_request or delete_folder unless the ' +
+      'collection itself is going. Flow steps pointing into it stay in their flows and fail as ' +
+      'missing when run; used_by_flows lists them.',
+    inputSchema: { collection_id: z.string() },
+  }, async ({ collection_id }) => {
+    const c = await api.getCollection(collection_id);
+    if (!c) throw new Error(`Collection "${collection_id}" not found`);
+    const flows = await api.listFlows();
+    const usedBy = flows.flatMap((f) => (f.steps || [])
+      .filter((s) => s.collectionId === c.id)
+      .map((s) => ({ flow_id: f.id, flow: f.name, step_id: s.id, step: s.name })));
+    const res = await api.deleteCollection(c.id);
+    return {
+      deleted_collection_id: c.id,
+      name: c.name,
+      deleted_requests: (c.requests || []).length,
+      deleted_folders: (c.folders || []).length,
+      ok: res.ok,
+      used_by_flows: usedBy,
+    };
+  });
+
   // =====================================================================
   // Flows
   // =====================================================================
@@ -1108,6 +1164,47 @@ function createServer() {
     };
   });
 
+  tool('delete_flow', {
+    title: 'Delete a flow',
+    description:
+      'Delete a flow and its steps. Permanent — there is no undo. The saved requests its steps ' +
+      'pointed at are not touched; only the chain through them goes.',
+    inputSchema: { flow_id: z.string() },
+  }, async ({ flow_id }) => {
+    const f = await api.getFlow(flow_id);
+    if (!f) throw new Error(`Flow "${flow_id}" not found`);
+    const res = await api.deleteFlow(f.id);
+    return { deleted_flow_id: f.id, name: f.name, steps: (f.steps || []).length, ok: res.ok };
+  });
+
+  tool('delete_flow_folder', {
+    title: 'Delete a flow folder',
+    description:
+      'Delete a folder flows are filed under, taking the folders nested inside it and every flow in ' +
+      'any of them. Permanent — there is no undo, and it removes more than it names. To keep the ' +
+      'flows, move them out first with save_flow folder_id. The requests the deleted flows stepped ' +
+      'through are not touched.',
+    inputSchema: { folder_id: z.string() },
+  }, async ({ folder_id }) => {
+    const before = await api.listFlowFolders();
+    const target = before.find((f) => f.id === folder_id);
+    if (!target) throw new Error(`Flow folder "${folder_id}" not found`);
+    const flowsBefore = await api.listFlows();
+    const out = await api.deleteFlowFolder(folder_id);
+    const gone = new Set(out.deletedFlows || []);
+    return {
+      deleted_folder_id: folder_id,
+      name: target.name,
+      path: folderPath(before, folder_id),
+      deleted_folders: before
+        .filter((f) => !(out.folders || []).some((g) => g.id === f.id))
+        .map((f) => ({ folder_id: f.id, name: f.name })),
+      deleted_flows: flowsBefore
+        .filter((f) => gone.has(f.id))
+        .map((f) => ({ flow_id: f.id, name: f.name })),
+    };
+  });
+
   tool('set_env_var', {
     title: 'Set an environment variable',
     description:
@@ -1124,6 +1221,25 @@ function createServer() {
     const variables = { ...(env.variables || {}), [key]: value };
     const saved = await api.updateEnvironment(env.id, { ...env, variables });
     return { environment_id: saved.id, name: saved.name, variables: saved.variables };
+  });
+
+  tool('delete_environment', {
+    title: 'Delete an environment',
+    description:
+      'Delete an environment, by name or id, with every variable in it. Permanent — there is no undo. ' +
+      'Requests are not touched: the {{vars}} they refer to simply stop resolving, so a run against ' +
+      'this environment has to name another one.',
+    inputSchema: { environment: z.string() },
+  }, async ({ environment }) => {
+    await assertEnv(environment);
+    const env = (await findEnv(environment))!;
+    const res = await api.deleteEnvironment(env.id);
+    return {
+      deleted_environment_id: env.id,
+      name: env.name,
+      deleted_variables: Object.keys(env.variables || {}).length,
+      ok: res.ok,
+    };
   });
 
   return server;

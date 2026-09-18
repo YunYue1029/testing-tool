@@ -81,6 +81,12 @@ export const api = {
     request<Collection>('DELETE', `/api/collections/${encodeURIComponent(colId)}/requests/${encodeURIComponent(requestId)}`),
   createFolder: (colId: string, folder: Folder) =>
     request<Collection>('POST', `/api/collections/${encodeURIComponent(colId)}/folders`, folder),
+  // Takes the folders nested under it and every request filed in any of them,
+  // in one write. Answers with the collection as it stands after.
+  deleteFolder: (colId: string, folderId: string) =>
+    request<Collection>('DELETE', `/api/collections/${encodeURIComponent(colId)}/folders/${encodeURIComponent(folderId)}`),
+  deleteCollection: (id: string) =>
+    request<{ ok: boolean }>('DELETE', `/api/collections/${encodeURIComponent(id)}`),
 
   listFlows: () => request<Flow[]>('GET', '/api/flows'),
   getFlow: (id: string) => request<Flow | null>('GET', `/api/flows/${encodeURIComponent(id)}`),
@@ -89,11 +95,19 @@ export const api = {
     request<Flow>('PUT', `/api/flows/${encodeURIComponent(id)}`, f),
   runFlow: (id: string, payload: { environment?: string }) =>
     request<FlowReport>('POST', `/api/flows/${encodeURIComponent(id)}/run`, payload),
+  deleteFlow: (id: string) =>
+    request<{ ok: boolean }>('DELETE', `/api/flows/${encodeURIComponent(id)}`),
   listFlowFolders: () => request<Folder[]>('GET', '/api/flow-folders'),
   createFlowFolder: (folder: Omit<Folder, 'id'> & { id?: string }) =>
     request<{ folder: Folder; folders: Folder[] }>('POST', '/api/flow-folders', folder),
+  // Flows are separate documents, so this cannot be one atomic write; the
+  // backend removes the flows first and reports which ones went.
+  deleteFlowFolder: (id: string) =>
+    request<{ folders: Folder[]; deletedFlows: string[] }>('DELETE', `/api/flow-folders/${encodeURIComponent(id)}`),
 
   listEnvironments: () => request<Environment[]>('GET', '/api/environments'),
   updateEnvironment: (id: string, e: EnvironmentInput) =>
     request<Environment>('PUT', `/api/environments/${encodeURIComponent(id)}`, e),
+  deleteEnvironment: (id: string) =>
+    request<{ ok: boolean }>('DELETE', `/api/environments/${encodeURIComponent(id)}`),
 };
