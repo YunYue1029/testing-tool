@@ -22,8 +22,8 @@ import type { ZodRawShape } from 'zod';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { api } from './api.ts';
 import type {
-  Auth, AuthType, Folder, HttpRequest, HttpResponse, InlineRequest, Row,
-  SavedRequest, ShellRequest, ShellResponse,
+  Auth, AuthType, Collection, Folder, HttpRequest, HttpResponse, InlineRequest,
+  RequestBody, Row, SavedRequest, ShellRequest, ShellResponse,
 } from '../server/types.ts';
 
 function newId(): string {
@@ -128,6 +128,65 @@ async function assertEnv(ref: string | undefined) {
   const envs = await api.listEnvironments();
   const names = envs.map((e) => e.name).join(', ') || '(none)';
   throw new Error(`Environment "${ref}" not found. Available: ${names}`);
+}
+
+// ---- body variants ----
+// A request keeps several named bodies and sends one of them: the payloads a
+// route is tested with ("valid", "missing field") sitting side by side instead
+// of being edited over each other.
+
+// Only a request that can have a body at all — a shell test has none.
+async function httpRequestIn(collectionId: string, requestId: string) {
+  const collection = await api.getCollection(collectionId);
+  if (!collection) throw new Error(`Collection "${collectionId}" not found`);
+  const r = (collection.requests || []).find((x) => x.id === requestId);
+  if (!r) throw new Error(`Request "${requestId}" not found in collection "${collection.name}"`);
+  if (r.kind === 'shell') {
+    throw new Error(`"${r.name}" is a shell test — it runs a command and has no body.`);
+  }
+  return { collection, request: r as HttpRequest };
+}
+
+// The stored variants, with the one that actually gets sent settled. A request
+// saved before variants existed, or with a dangling activeBodyId, still has to
+// answer both questions.
+function bodyVariants(r: HttpRequest): { bodies: RequestBody[]; activeId: string } {
+  const bodies = Array.isArray(r.bodies) && r.bodies.length
+    ? r.bodies
+    : [{ id: newId(), name: 'Default', content: '' }];
+  const activeId = bodies.some((b) => b.id === r.activeBodyId) ? r.activeBodyId! : bodies[0]!.id;
+  return { bodies, activeId };
+}
+
+// Variants are addressed by name — which is the whole point of naming them.
+// A repeated name resolves to the first, and the listing shows the clash.
+function findVariant(bodies: RequestBody[], name: string): RequestBody | undefined {
+  return bodies.find((b) => b.name === name);
+}
+
+// What every body-variant tool answers with: the list as it now stands, so the
+// caller never has to re-read the request to see what it did. Content is left
+// out — it is what was just sent in, and the others can be large.
+function variantReport(collection: Collection, requestId: string, extra: Record<string, unknown>) {
+  const r = (collection.requests || []).find((x) => x.id === requestId) as HttpRequest | undefined;
+  const { bodies, activeId } = r
+    ? bodyVariants(r)
+    : { bodies: [] as RequestBody[], activeId: '' };
+  const active = bodies.find((b) => b.id === activeId);
+  return {
+    collection_id: collection.id,
+    request_id: requestId,
+    ...extra,
+    // A body is only sent when the type says there is one, however many
+    // variants are stored — worth saying, or an added variant looks live.
+    body_type: r ? r.bodyType || 'none' : 'none',
+    active_body: active ? active.name : null,
+    bodies: bodies.map((b) => ({
+      name: b.name,
+      active: b.id === activeId,
+      chars: (b.content || '').length,
+    })),
+  };
 }
 
 function isShellResponse(r: HttpResponse | ShellResponse): r is ShellResponse {
@@ -397,9 +456,15 @@ function createServer() {
     title: 'Get request detail',
     description:
       'Get the full content of one saved request (headers, params, body, script). ' +
-      'Query this only when you actually need the detail, to keep token usage low.',
-    inputSchema: { collection_id: z.string(), request_id: z.string() },
-  }, async ({ collection_id, request_id }) => {
+      'Query this only when you actually need the detail, to keep token usage low.\n' +
+      'body is the variant that gets sent; body_variants names them all. Pass body_variant to read ' +
+      'one of the others instead (see save_body_variant).',
+    inputSchema: {
+      collection_id: z.string(),
+      request_id: z.string(),
+      body_variant: z.string().optional(),
+    },
+  }, async ({ collection_id, request_id, body_variant }) => {
     const c = await api.getCollection(collection_id);
     if (!c) throw new Error(`Collection "${collection_id}" not found`);
     const r = (c.requests || []).find((x) => x.id === request_id);
@@ -416,7 +481,11 @@ function createServer() {
         script: r.script || '',
       };
     }
-    const body = (r.bodies || []).find((b) => b.id === r.activeBodyId) || (r.bodies || [])[0];
+    const { bodies, activeId } = bodyVariants(r);
+    const body = body_variant !== undefined ? findVariant(bodies, body_variant) : bodies.find((b) => b.id === activeId);
+    if (body_variant !== undefined && !body) {
+      throw new Error(`Body "${body_variant}" not found on "${r.name}". Stored: ${bodies.map((b) => b.name).join(', ')}`);
+    }
     return {
       request_id: r.id,
       name: r.name,
@@ -425,7 +494,13 @@ function createServer() {
       params: rowsToPlainObject(r.params),
       headers: rowsToPlainObject(r.headers),
       body_type: r.bodyType || 'none',
+      // Which variant the content below is, since it is no longer always the
+      // active one, and what else is stored beside it.
+      body_name: body ? body.name : null,
       body: body ? body.content : '',
+      ...(bodies.length > 1
+        ? { body_variants: bodies.map((b) => ({ name: b.name, active: b.id === activeId })) }
+        : {}),
       // Values kept on the request itself, which beat the environment when it
       // runs — without them it is impossible to tell from here why {{user_id}}
       // resolves for this request and nowhere else.
@@ -527,12 +602,16 @@ function createServer() {
       'Run a stored request by id. Resolves {{vars}} from the environment and builds the url from its ' +
       'saved params. A {{dy_url}} token in the url expands to base_url + the request\'s folder path. ' +
       'Optional overrides replace url/headers/body before sending. ' +
+      'body_variant sends one of the request\'s other stored bodies (see save_body_variant) for this ' +
+      'run only, leaving the active one where it is — how the same route is tried with its "valid" ' +
+      'and then its "missing field" payload. ' +
       'A shell test (see save_shell_test) runs here too — it answers with exit_code, stdout and ' +
       'stderr instead of a response, and takes no overrides.',
     inputSchema: {
       collection_id: z.string(),
       request_id: z.string(),
       environment: z.string().optional(),
+      body_variant: z.string().optional(),
       overrides: z
         .object({
           url: z.string().optional(),
@@ -541,7 +620,22 @@ function createServer() {
         })
         .optional(),
     },
-  }, async ({ collection_id, request_id, environment, overrides }) => {
+  }, async ({ collection_id, request_id, environment, body_variant, overrides }) => {
+    // A named variant is sent as a body override, so the stored active one is
+    // not disturbed by a run. Both would be two answers to the same question.
+    let sent = overrides;
+    if (body_variant !== undefined) {
+      if (overrides && overrides.body !== undefined) {
+        throw new Error('Pass either body_variant or overrides.body, not both.');
+      }
+      const { request } = await httpRequestIn(collection_id, request_id);
+      const { bodies } = bodyVariants(request);
+      const variant = findVariant(bodies, body_variant);
+      if (!variant) {
+        throw new Error(`Body "${body_variant}" not found on "${request.name}". Stored: ${bodies.map((b) => b.name).join(', ')}`);
+      }
+      sent = { ...overrides, body: variant.content };
+    }
     // The backend resolves and sends it — the same code path the app uses.
     // Rebuilding the call here is how this tool ended up not setting
     // Content-Type for JSON, not sending form-data and not running scripts.
@@ -549,7 +643,7 @@ function createServer() {
       collection_id,
       request_id,
       environment,
-      overrides,
+      overrides: sent,
     });
     return {
       ...shapeResponse(out.response),
@@ -722,6 +816,82 @@ function createServer() {
 
     const saved = await api.putRequest(c.id, record);
     return { collection_id: saved.id, request_id: record.id, request: record };
+  });
+
+  tool('save_body_variant', {
+    title: 'Save a body variant',
+    description:
+      'Add a second (third, fourth) named body to a request, or replace the content of one already ' +
+      'there — the "valid" / "missing field" / "bad format" payloads a route is tested with, kept ' +
+      'side by side rather than edited over each other. Matched by name; a name not stored yet is ' +
+      'added. This is the only way to add one: save_request only ever writes the active variant. ' +
+      'activate:true also makes it the one that gets sent, otherwise the active one is left as it ' +
+      'is. A body is only sent when the request\'s body_type is json or text (save_request).',
+    inputSchema: {
+      collection_id: z.string(),
+      request_id: z.string(),
+      name: z.string(),
+      content: z.string(),
+      activate: z.boolean().optional(),
+    },
+  }, async ({ collection_id, request_id, name, content, activate }) => {
+    const { collection, request } = await httpRequestIn(collection_id, request_id);
+    const { bodies, activeId } = bodyVariants(request);
+    const existing = findVariant(bodies, name);
+    const variant = existing || { id: newId(), name, content };
+    const record: HttpRequest = {
+      ...request,
+      bodies: existing
+        ? bodies.map((b) => (b.id === existing.id ? { ...b, content } : b))
+        : [...bodies, variant],
+      activeBodyId: activate ? variant.id : activeId,
+    };
+    const saved = await api.putRequest(collection.id, record);
+    return variantReport(saved, request_id, { saved_body: name, added: !existing });
+  });
+
+  tool('set_active_body', {
+    title: 'Set the active body',
+    description:
+      'Choose which stored body the request sends from now on. This is a saved change — to try ' +
+      'another variant once without moving what is stored, pass body_variant to run_saved_request.',
+    inputSchema: { collection_id: z.string(), request_id: z.string(), name: z.string() },
+  }, async ({ collection_id, request_id, name }) => {
+    const { collection, request } = await httpRequestIn(collection_id, request_id);
+    const { bodies } = bodyVariants(request);
+    const target = findVariant(bodies, name);
+    if (!target) {
+      throw new Error(`Body "${name}" not found on "${request.name}". Stored: ${bodies.map((b) => b.name).join(', ')}`);
+    }
+    const saved = await api.putRequest(collection.id, { ...request, bodies, activeBodyId: target.id });
+    return variantReport(saved, request_id, { activated: name });
+  });
+
+  tool('delete_body_variant', {
+    title: 'Delete a body variant',
+    description:
+      'Remove one named body from a request. Permanent — there is no undo. A request always keeps ' +
+      'one body, so the last one cannot be removed; clear its content with save_request instead. ' +
+      'Removing the active one moves the request to the first body left.',
+    inputSchema: { collection_id: z.string(), request_id: z.string(), name: z.string() },
+  }, async ({ collection_id, request_id, name }) => {
+    const { collection, request } = await httpRequestIn(collection_id, request_id);
+    const { bodies, activeId } = bodyVariants(request);
+    const target = findVariant(bodies, name);
+    if (!target) {
+      throw new Error(`Body "${name}" not found on "${request.name}". Stored: ${bodies.map((b) => b.name).join(', ')}`);
+    }
+    if (bodies.length === 1) {
+      throw new Error(`"${name}" is the only body on "${request.name}" — a request keeps one. Clear its content with save_request instead.`);
+    }
+    const next = bodies.filter((b) => b.id !== target.id);
+    const record: HttpRequest = {
+      ...request,
+      bodies: next,
+      activeBodyId: activeId === target.id ? next[0]!.id : activeId,
+    };
+    const saved = await api.putRequest(collection.id, record);
+    return variantReport(saved, request_id, { deleted_body: name });
   });
 
   tool('save_shell_test', {
