@@ -269,6 +269,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
    under the one on the flow head — the two folds line up because they are the
    same gesture on two different things. */
 .flow-desc { position: relative; flex: 0 0 auto; }
+.flow-vars { flex: 0 0 auto; margin: 2px 0 6px; }
+.flow-vars-toggle {
+  background: none; border: none; padding: 2px 4px; cursor: pointer;
+  color: var(--muted); font-size: 12px;
+}
+.flow-vars-toggle:hover, .flow-vars-toggle.open { color: var(--text); }
+.flow-vars .req-vars { margin-top: 4px; }
 .desc-caret {
   position: absolute; left: 4px; top: 3px; padding: 0;
   background: none; border: none; color: var(--muted); cursor: pointer;

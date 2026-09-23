@@ -267,6 +267,11 @@ export interface Flow {
   description: string;
   folderId: string | null;
   environmentId: string | null;
+  // Values this flow runs with — the {{project_id}} of the case it covers — so
+  // an input only this flow cares about need not sit in an environment every
+  // other flow carries. They start the run's variables: over the environment
+  // and a saved request's own values, under whatever a step captures.
+  vars: Row[];
   shell: FlowShell;
   steps: Step[];
   updatedAt: string;
@@ -286,6 +291,7 @@ export interface FlowInput {
   description?: string;
   folderId?: string | null;
   environmentId?: string | null;
+  vars?: Row[];
   shell?: Partial<FlowShell>;
   steps?: StepInput[];
   updatedAt?: string;

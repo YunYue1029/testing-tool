@@ -5,9 +5,12 @@ import AddStepModal from './AddStepModal';
 import StepEditModal from './StepEditModal';
 import FlowReportModal from './FlowReportModal';
 import FlowReportDoc from './FlowReportDoc';
-import { newId, prettify, fmtSize, emptyInlineRequest, fitToContent } from '../util';
+import RequestVarsEditor from './RequestVarsEditor';
+import {
+  newId, prettify, fmtSize, emptyInlineRequest, fitToContent, flowUsedVarNames,
+} from '../util';
 import type {
-  Collection, Flow, FlowShell, InlineRequest, Step, StepReport,
+  Collection, Flow, FlowShell, InlineRequest, Step, StepReport, Vars,
 } from '../types.ts';
 
 // A flow report as the panel receives it: the server's, plus the two things
@@ -38,6 +41,9 @@ interface FlowPanelProps {
   // Which environment the run resolved its {{vars}} against. Only the printed
   // report asks — a reader who was not here cannot tell staging from local.
   environmentName: string | null;
+  // The active environment's values, so the vars editor can say which of the
+  // flow's own override it and which tokens nothing defines.
+  envVars: Vars;
 }
 
 // Its own type, like the sidebar's two: it says a dragover is one of ours, and
@@ -278,10 +284,13 @@ function pdfName(name: string): string {
 // hands to the next and the checks on what came back.
 export default function FlowPanel({
   flow, collections, onChange, onRun, onRunStep, onDelete, running, runningStep, report,
-  environmentName,
+  environmentName, envVars,
 }: FlowPanelProps) {
   const [openStep, setOpenStep] = useState<string | null>(null); // step id whose detail is expanded
   const [adding, setAdding] = useState(false); // the "add step" dialog is up
+  const [varsOpen, setVarsOpen] = useState(false); // the flow's own vars are showing
+  const varCount = (flow.vars || []).filter((r) => r.key).length;
+  const usedVars = useMemo(() => flowUsedVarNames(flow, collections), [flow, collections]);
   // Which steps have their response opened. A failing step opens itself — that
   // is the one you came to read — until you say otherwise, hence storing the
   // choice rather than the state.
@@ -601,6 +610,35 @@ export default function FlowPanel({
               fitToContent(e.target);
               onChange({ ...flow, description: e.target.value });
             }}
+          />
+        )}
+      </div>
+
+      {/* Folded to a count by default: the steps are what a flow is read for,
+          and its inputs are set once and then left alone. */}
+      <div className="flow-vars">
+        <button
+          className={`flow-vars-toggle ${varsOpen ? 'open' : ''}`}
+          onClick={() => setVarsOpen((open) => !open)}
+        >
+          <span className={`caret ${varsOpen ? 'open' : ''}`}>▸</span> Variables
+          {varCount > 0 && <span className="hint-inline"> · {varCount}</span>}
+        </button>
+        {varsOpen && (
+          <RequestVarsEditor
+            rows={flow.vars || []}
+            used={usedVars}
+            envVars={envVars}
+            onChange={(vars) => onChange({ ...flow, vars })}
+            title="Flow variables"
+            help={(
+              <>
+                Values this flow runs with — they override the active environment and a
+                saved request&apos;s own values, and a step that captures the same name
+                overrides them. An input only this flow needs belongs here rather than in
+                an environment.
+              </>
+            )}
           />
         )}
       </div>

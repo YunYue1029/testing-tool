@@ -1126,13 +1126,18 @@ function createServer() {
       '- always: run this step even after an earlier one failed — use it for the delete, or a failed ' +
       'run leaves its rows behind.\n' +
       'Run variables (including tokens a login script saves with env.set) live only for the run and ' +
-      'never touch the stored environment.',
+      'never touch the stored environment.\n' +
+      'vars: the flow\'s own inputs, {name: value} — e.g. {"project_id":"10"} for a flow that reuses ' +
+      'an existing project. They start the run: over the environment and a saved request\'s own ' +
+      'values, under anything a step captures. Put an input only this flow needs here, not in an ' +
+      'environment. Omitted on a replace, the stored ones are kept.',
     inputSchema: {
       flow_id: z.string().optional(),
       name: z.string(),
       description: z.string().optional(),
       folder_id: z.string().optional(),
       environment: z.string().optional(),
+      vars: z.record(z.string(), z.string()).optional(),
       // What the flow's shell steps run in, for all of them at once.
       shell_session: z.boolean().optional(),
       shell_cwd: z.string().optional(),
@@ -1197,7 +1202,7 @@ function createServer() {
       })),
     },
   }, async ({
-    flow_id, name, description, folder_id, environment, shell_session, shell_cwd, steps,
+    flow_id, name, description, folder_id, environment, vars, shell_session, shell_cwd, steps,
   }) => {
     let environmentId: string | null = null;
     if (environment) {
@@ -1210,6 +1215,11 @@ function createServer() {
       description: description || '',
       folderId: folder_id || null,
       environmentId,
+      // A replace that says nothing about vars keeps them — editing a step
+      // should not quietly wipe the inputs the flow runs with.
+      vars: vars
+        ? Object.entries(vars).map(([key, value]) => ({ key, value, enabled: true }))
+        : (flow_id ? ((await api.getFlow(flow_id))?.vars || []) : []),
       shell: { session: shell_session !== false, cwd: shell_cwd || '' },
       steps: (steps || []).map((s, i) => {
         // The step says which it is, but a step carrying only an inline request

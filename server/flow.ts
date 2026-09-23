@@ -454,7 +454,7 @@ export interface RunFlowOptions {
 }
 
 // Run every step in order. Values captured by one step are visible to the next
-// through a run-scoped variable map — never written back to the stored
+// through a run-scoped variable map, which starts from the flow's own vars — never written back to the stored
 // environment, so a CRUD flow doesn't leave an id behind and two runs can't
 // tread on each other.
 async function runFlow(
@@ -462,7 +462,10 @@ async function runFlow(
   { environmentId, abortSignal }: RunFlowOptions = {},
 ): Promise<FlowReport> {
   const envId = environmentId || flow.environmentId || undefined;
-  const runVars: Vars = {};
+  // Seeded with the flow's own values, so they win over the environment and a
+  // saved request's defaults, and a step that captures the same name wins
+  // over them.
+  const runVars: Vars = requestVars(flow);
   const started = Date.now();
   const steps: StepReport[] = [];
   const session = shellSessionFor(flow);

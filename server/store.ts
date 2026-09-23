@@ -297,6 +297,14 @@ const flows = {
       folderId: flow.folderId || null,
       // Default environment for a run; the runner's own argument wins.
       environmentId: flow.environmentId || null,
+      // The flow's own variables, as rows so an unchecked one keeps its value.
+      vars: (Array.isArray(flow.vars) ? flow.vars : [])
+        .filter((r) => r && typeof r.key === 'string')
+        .map((r): Row => ({
+          key: r.key,
+          value: typeof r.value === 'string' ? r.value : '',
+          ...(r.enabled === false ? { enabled: false } : {}),
+        })),
       // What the flow's shell steps run in. One session by default — the same
       // shell for every command in the run, so a cd or an export reaches the
       // steps after it, which is what makes a sequence of commands worth

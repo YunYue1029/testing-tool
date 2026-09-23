@@ -4,7 +4,7 @@
 // are re-exported below, so what you see previewed and what the server builds
 // cannot drift apart.
 import type {
-  Auth, AuthDescription, AuthForm, Collection, CollectionAuth, FormRow,
+  Auth, AuthDescription, AuthForm, Collection, CollectionAuth, Flow, FormRow,
   HttpRequest, InlineRequest, Overrides, RequestBody, Row, SavedRequest,
   ShellRequest, Vars,
 } from './types.ts';
@@ -80,6 +80,49 @@ export function usedVarNames(request: SavedRequest): string[] {
     if (!('type' in r) || r.type !== 'file') scan(r.value);
   }
   for (const b of request.bodies || []) scan(b.content);
+  names.delete('dy_url');
+  names.delete('base_url');
+  return [...names];
+}
+
+// Every {{token}} a flow's steps mention that no step captures — what the
+// flow needs from outside the run, so its own vars editor can offer them. A
+// saved request's tokens count too: the step sends them.
+export function flowUsedVarNames(flow: Flow, collections: Collection[]): string[] {
+  const names = new Set<string>();
+  const scan = (s: string | null | undefined) => {
+    for (const n of unresolvedVarNames(s)) names.add(n);
+  };
+  const captured = new Set<string>();
+  for (const step of flow.steps || []) {
+    if (step.enabled === false) continue;
+    for (const e of step.extract || []) captured.add(e.var);
+    if (step.mode === 'shell') {
+      scan(step.command);
+      scan(step.cwd);
+    } else if (step.mode === 'inline' && step.request) {
+      const r = step.request;
+      scan(r.url);
+      scan(r.body);
+      for (const row of [...(r.headers || []), ...(r.params || [])]) {
+        if (row.enabled === false) continue;
+        scan(row.key);
+        scan(row.value);
+      }
+    } else {
+      const col = collections.find((c) => c.id === step.collectionId);
+      const saved = col && col.requests.find((q) => q.id === step.requestId);
+      if (saved) for (const n of usedVarNames(saved)) names.add(n);
+    }
+    const o = step.overrides;
+    if (o) {
+      scan(o.url);
+      scan(o.body);
+      for (const v of Object.values(o.headers || {})) scan(v);
+    }
+    for (const a of step.assert || []) if (typeof a.value === 'string') scan(a.value);
+  }
+  for (const n of captured) names.delete(n);
   names.delete('dy_url');
   names.delete('base_url');
   return [...names];

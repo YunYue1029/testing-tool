@@ -137,8 +137,8 @@ app.post('/api/flows/:id/run', asyncH(async (req, res) => {
 // a one-step flow, so assertions, extractions and the report come out identical
 // to the step's entry in a full run.
 //
-// It starts with no run variables: whatever an earlier step captured is simply
-// not there, and a step built on {{an_id_from_step_3}} will say so rather than
+// It starts with only the flow's own vars: whatever an earlier step captured is
+// simply not there, and a step built on {{an_id_from_step_3}} will say so rather than
 // quietly passing. Variables the environment defines resolve as usual.
 app.post('/api/flows/:id/steps/:stepId/run', asyncH(async (req, res) => {
   const flow = await flows.get(req.params.id);

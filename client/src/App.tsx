@@ -874,6 +874,7 @@ export default function App() {
             environmentName={
               (environments.find((e) => e.id === activeEnvId) || {}).name || null
             }
+            envVars={activeVars()}
           />
         ) : isShellTest(request) ? (
           <>

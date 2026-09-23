@@ -13,9 +13,14 @@ interface RequestVarsEditorProps {
   used: string[];
   envVars: Vars;
   onChange: (rows: Row[]) => void;
+  // A flow's variables are edited with this same list; it says whose they are.
+  title?: string;
+  help?: React.ReactNode;
 }
 
-export default function RequestVarsEditor({ rows, used, envVars, onChange }: RequestVarsEditorProps) {
+export default function RequestVarsEditor({
+  rows, used, envVars, onChange, title = 'Request variables', help,
+}: RequestVarsEditorProps) {
   const list = rows && rows.length ? rows : [emptyRow()];
   const named = new Set(list.filter((r) => r.key).map((r) => r.key));
 
@@ -34,11 +39,15 @@ export default function RequestVarsEditor({ rows, used, envVars, onChange }: Req
   return (
     <div className="req-vars">
       <label className="field-label">
-        Request variables
+        {title}
         <HelpTip>
-          Values for this request only — they override the active environment, so an id
-          you need for a single call doesn&apos;t have to be declared there. Clear a value
-          to fall back to the environment again.
+          {help || (
+            <>
+              Values for this request only — they override the active environment, so an id
+              you need for a single call doesn&apos;t have to be declared there. Clear a value
+              to fall back to the environment again.
+            </>
+          )}
         </HelpTip>
       </label>
       {missing.length > 0 && (
