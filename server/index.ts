@@ -10,7 +10,7 @@ import { newId } from './ids.ts';
 import { convertPostmanCollection, convertPostmanEnvironment } from './postman.ts';
 import { SendError, runRequest, runShellRequest } from './runner.ts';
 import { runFlow } from './flow.ts';
-import { folderWithDescendants } from './resolve.ts';
+import { baseUrlVar, collectionUrlVar, folderWithDescendants } from './resolve.ts';
 import type {
   Collection, CollectionInput, Environment, EnvironmentInput, Flow, FlowInput,
   Folder, SavedRequest,
@@ -231,7 +231,17 @@ app.get('/api/collections/:id', asyncH(async (req, res) => {
   if (!c) return res.status(404).json({ error: 'Not found' });
   res.json(c);
 }));
-app.post('/api/collections', asyncH(async (req, res) => res.json(await collections.save(req.body || {}))));
+// A new collection reads its base URL from an environment variable named after
+// it — oivsion from {{oivsion_url}} — declared, empty, in every environment, so
+// each one only needs its value filled in. A caller that names a base URL of
+// its own keeps it.
+app.post('/api/collections', asyncH(async (req, res) => {
+  const input: CollectionInput = req.body || {};
+  const urlVar = input.baseUrl ? '' : collectionUrlVar(input.name);
+  const c = await collections.save(urlVar ? { ...input, baseUrl: `{{${urlVar}}}` } : input);
+  if (urlVar) await environments.declare([urlVar]);
+  res.json(c);
+}));
 app.put('/api/collections/:id', asyncH(async (req, res) =>
   res.json(await collections.save({ ...(req.body as CollectionInput), id: req.params.id }))));
 app.delete('/api/collections/:id', asyncH(async (req, res) => {
@@ -337,7 +347,15 @@ app.delete('/api/collections/:id/folders/:fid', asyncH(async (req, res) => {
 
 // ---- Environments ----
 app.get('/api/environments', asyncH(async (req, res) => res.json(await environments.list())));
-app.post('/api/environments', asyncH(async (req, res) => res.json(await environments.save(req.body || {}))));
+// A new environment starts with every collection's url variable, empty, beside
+// whatever the caller sent — which wins where the two share a key.
+app.post('/api/environments', asyncH(async (req, res) => {
+  const input: EnvironmentInput = req.body || {};
+  const urlVars = (await collections.list())
+    .map((c) => baseUrlVar(c.baseUrl)).filter((k): k is string => !!k);
+  const declared = Object.fromEntries(urlVars.map((k) => [k, '']));
+  res.json(await environments.save({ ...input, variables: { ...declared, ...(input.variables || {}) } }));
+}));
 app.put('/api/environments/:id', asyncH(async (req, res) =>
   res.json(await environments.save({ ...(req.body as EnvironmentInput), id: req.params.id }))));
 app.delete('/api/environments/:id', asyncH(async (req, res) => {

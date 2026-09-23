@@ -636,8 +636,9 @@ function createServer() {
   tool('create_collection', {
     title: 'Create a collection',
     description:
-      'Create a new empty collection. Optional base_url pins {{base_url}} for every request in it — ' +
-      'set it when the collection targets its own service/container (e.g. http://localhost:8001).',
+      'Create a new empty collection. Without base_url it reads its base URL from an environment ' +
+      'variable named after it — "oivsion" reads {{oivsion_url}} — which is added, empty, to every ' +
+      'environment; fill it in with set_env_var. Pass base_url only to pin something else.',
     inputSchema: { name: z.string(), base_url: z.string().optional() },
   }, async ({ name, base_url }) => {
     const c = await api.createCollection({ name, baseUrl: base_url || '' });

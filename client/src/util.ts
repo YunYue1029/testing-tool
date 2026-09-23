@@ -17,7 +17,7 @@ export { newId } from '../../server/ids.ts';
 export {
   VAR_RE, DEFAULT_BASE_URL, substitute, rowsToObject, requestVars, collapseSlashes,
   folderChain, folderPath, folderWithDescendants, dyUrl, composeUrl, buildUrl,
-  authHeader, requestAuthType, applyCollectionBaseUrl,
+  authHeader, requestAuthType, applyCollectionBaseUrl, baseUrlVar,
 } from '../../server/resolve.ts';
 
 // ---- Showing a response (shared by the response panel and a flow's steps) ----

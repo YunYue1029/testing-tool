@@ -3,7 +3,7 @@ import KeyValueEditor from './KeyValueEditor';
 import { IconPencil, IconClose } from './Icons';
 import HelpTip from './HelpTip';
 import useAutoSave from '../useAutoSave';
-import { DEFAULT_BASE_URL } from '../util';
+import { DEFAULT_BASE_URL, baseUrlVar } from '../util';
 import type { Collection, Environment, Row } from '../types.ts';
 
 // The environment being edited, as the dialog holds it: rows rather than a
@@ -41,8 +41,14 @@ export default function EnvironmentBar({
   const [editing, setEditing] = useState<EnvDraft | null>(null); // env being edited
   const [managing, setManaging] = useState<string[] | null>(null); // draft of the saved base-URL list
 
+  // Every collection's url variable, listed empty — the server declares them
+  // too, but the draft is what the next auto-save writes back, so they have to
+  // be in it.
   function openNew() {
-    setEditing({ id: null, name: 'New Environment', rows: [{ key: '', value: '', enabled: true }] });
+    const urlVars = [...new Set(collections.map((c) => baseUrlVar(c.baseUrl)).filter(Boolean))];
+    const rows = urlVars.map((key) => ({ key: key as string, value: '', enabled: true }));
+    rows.push({ key: '', value: '', enabled: true });
+    setEditing({ id: null, name: 'New Environment', rows });
   }
 
   function openEdit(env: Environment) {

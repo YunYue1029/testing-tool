@@ -194,6 +194,26 @@ const environments = {
       return record;
     });
   },
+  // Add each key, empty, to every environment that lacks it — a new
+  // collection's url variable, there to fill in whichever one you switch to.
+  // A key an environment already has keeps its value.
+  async declare(keys: string[]): Promise<void> {
+    for (const { id } of await environments.list()) {
+      await withLock(`env:${id}`, async () => {
+        const file = path.join(ENVIRONMENTS_DIR, `${id}.json`);
+        const cur = await readJson<Environment | null>(file, null);
+        if (!cur) return;
+        const vars = cur.variables || {};
+        const missing = keys.filter((k) => !Object.prototype.hasOwnProperty.call(vars, k));
+        if (!missing.length) return;
+        await writeJson(file, {
+          ...cur,
+          variables: { ...vars, ...Object.fromEntries(missing.map((k) => [k, ''])) },
+          updatedAt: new Date().toISOString(),
+        });
+      });
+    }
+  },
   remove(id: string): Promise<boolean> {
     return withLock(`env:${id}`, async () => {
       try {

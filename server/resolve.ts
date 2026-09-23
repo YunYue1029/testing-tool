@@ -197,6 +197,23 @@ function applyCollectionBaseUrl(
   return { ...vars, base_url: substitute(raw, vars) };
 }
 
+// The environment variable a new collection reads its base URL from: its name,
+// lower-cased, with whatever a {{var}} cannot hold turned into '_' — oivsion
+// reads {{oivsion_url}}. '' when nothing of the name survives.
+function collectionUrlVar(name: string | null | undefined): string {
+  const slug = String(name || '').trim().toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  return slug ? `${slug}_url` : '';
+}
+
+// The variable a collection's base URL is, when it is exactly one {{var}} —
+// which every environment is then expected to define. null for a literal URL,
+// an empty one, or anything built from more than the one token.
+function baseUrlVar(baseUrl: string | null | undefined): string | null {
+  const m = /^\{\{\s*([\w.-]+)\s*\}\}$/.exec(String(baseUrl || '').trim());
+  return m ? m[1]! : null;
+}
+
 // Build a {key: value} substitution map from an environment record, excluding
 // keys listed in `disabled`.
 function envVars(
@@ -215,5 +232,6 @@ function envVars(
 export {
   VAR_RE, DEFAULT_BASE_URL, substitute, rowsToObject, requestVars, collapseSlashes,
   folderChain, folderPath, folderWithDescendants, dyUrl, composeUrl, buildUrl, authHeader,
-  requestAuthType, requestAuthHeader, applyCollectionBaseUrl, envVars,
+  requestAuthType, requestAuthHeader, applyCollectionBaseUrl, collectionUrlVar, baseUrlVar,
+  envVars,
 };
