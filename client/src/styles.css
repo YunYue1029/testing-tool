@@ -163,8 +163,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   opacity: 1; visibility: visible;
 }
 .helptip-bubble code { background: var(--bg-3); padding: 1px 4px; border-radius: 4px; }
-/* Close to a panel's right edge there is no room to open rightwards. */
-.helptip.tip-left .helptip-bubble { left: auto; right: 0; }
 
 .collection { margin-bottom: 8px; }
 .collection-head {
@@ -236,9 +234,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .bar-act:hover { opacity: 1; }
 .env-bar .bar-act { width: 26px; height: 26px; }
 .env-bar .bar-act:disabled { opacity: .25; background: transparent; cursor: default; }
-.hstatus { font-size: 11px; font-weight: 700; }
-.hstatus.ok { color: var(--green); }
-.hstatus.err { color: var(--red); }
 
 .tag {
   font-size: 10px; font-weight: 700; letter-spacing: .3px;
@@ -651,6 +646,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   color: var(--muted); font-size: 12px; white-space: nowrap;
 }
 .save-status.err { color: var(--red); }
+/* Something the server refused, said once at the bottom until dismissed. */
+.app-notice {
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 20;
+  display: flex; align-items: center; gap: 12px; max-width: 70vw;
+  padding: 8px 12px; border: 1px solid var(--red); border-radius: 6px;
+  background: var(--bg-3); color: var(--red); font-size: 12px; white-space: pre-wrap;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+}
+.modal-error { color: var(--red); font-size: 12px; margin: 8px 0 0; white-space: pre-wrap; }
 .btn-danger { background: var(--red); border-color: var(--red); color: #fff; }
 
 .tabs { display: flex; align-items: center; gap: 4px; margin-top: 14px; border-bottom: 1px solid var(--border); }

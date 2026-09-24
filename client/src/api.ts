@@ -1,12 +1,27 @@
 // Thin wrapper around the backend API.
 import type {
-  Collection, Environment, FileMeta, Flow, FlowReport, Folder, HttpRequest,
-  SavedRequest, Vars,
+  Collection, Environment, FileMeta, Flow, FlowReport, Folder, HttpRunResult,
+  SavedRequest, ShellRunResult, Vars,
 } from './types.ts';
-import type { HttpRunResult, ShellRunResult } from '../../server/types.ts';
+
+// Every response carries the server's revision as of the moment it was sent,
+// in an X-Rev header. Whoever is keeping track of what this tab has seen (the
+// poll in useWorkspace) registers here; `method` lets it tell a write, which
+// it reconciles with its own count of what it wrote, from a read, which it
+// leaves alone.
+type RevListener = (rev: string, method: string) => void;
+let revListener: RevListener | null = null;
+
+function noteRev(res: Response, method: string) {
+  const rev = res.headers.get('X-Rev');
+  if (rev && revListener) revListener(rev, method);
+}
 
 async function j<T>(
   method: string, url: string, body?: unknown, signal?: AbortSignal,
+  // Off for /api/rev itself: the poll compares that answer against what it
+  // has seen, so that read must not move the mark it is compared to.
+  reportRev = true,
 ): Promise<T> {
   const res = await fetch(url, {
     method,
@@ -23,6 +38,9 @@ async function j<T>(
     } catch {}
     throw new Error(msg);
   }
+  // Only a response that succeeded: a refused write bumped nothing, and a
+  // count it reports as its own would be one it never made.
+  if (reportRev) noteRev(res, method);
   return (res.status === 204 ? null : await res.json()) as T;
 }
 
@@ -39,6 +57,7 @@ async function uploadFile(file: File): Promise<FileMeta> {
     try { msg = ((await res.json()) as { error?: string }).error || msg; } catch {}
     throw new Error(msg);
   }
+  noteRev(res, 'POST');
   return res.json() as Promise<FileMeta>;
 }
 
@@ -56,6 +75,13 @@ export interface RunPayload {
 }
 
 export const api = {
+  // Subscribe to the revision every response reports. One listener, since one
+  // tab keeps one count; the return value unsubscribes.
+  onRev: (cb: RevListener) => {
+    revListener = cb;
+    return () => { if (revListener === cb) revListener = null; };
+  },
+
   // `signal` lets the UI cancel an in-flight request; the backend sees the
   // disconnect and drops its own call to the target.
   //
@@ -120,7 +146,7 @@ export const api = {
 
   // Cheap "has anything changed?" — a counter held in the server's memory, so
   // a tab can ask every few seconds without touching the disk.
-  getRev: () => j<{ startedAt: number; rev: number }>('GET', '/api/rev'),
+  getRev: () => j<{ startedAt: number; rev: number }>('GET', '/api/rev', undefined, undefined, false),
 
   importPostman: (data: unknown) => j<Record<string, unknown>>('POST', '/api/import/postman', data),
 

@@ -1,34 +1,21 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { IconPlus, IconClose, IconPencil, IconPlay } from './Icons';
-import CodeView from './CodeView';
-import AddStepModal from './AddStepModal';
-import StepEditModal from './StepEditModal';
-import FlowReportModal from './FlowReportModal';
-import FlowReportDoc from './FlowReportDoc';
-import FlowSettingsModal from './FlowSettingsModal';
+import { IconPlus, IconClose, IconPencil, IconPlay } from './Icons.tsx';
+import CodeView from './CodeView.tsx';
+import HttpBodyView from './HttpBodyView.tsx';
+import ShellOutputView from './ShellOutputView.tsx';
+import AddStepModal from './AddStepModal.tsx';
+import StepEditModal from './StepEditModal.tsx';
+import FlowReportModal from './FlowReportModal.tsx';
+import FlowReportDoc from './FlowReportDoc.tsx';
+import FlowSettingsModal from './FlowSettingsModal.tsx';
 import {
   newId, prettify, isJsonText, fmtSize, emptyInlineRequest, flowUsedVarNames,
   applyCollectionBaseUrl, buildUrl, composeUrl, requestVars, substitute,
-} from '../util';
+} from '../util.ts';
 import type {
-  Collection, Environment, Flow, InlineRequest, Step, StepReport, Vars,
+  Collection, Environment, Flow, InlineRequest, RunReport, Step, StepReport, Vars,
 } from '../types.ts';
-
-// A flow report as the panel receives it: the server's, plus the two things
-// only the panel knows — a run that failed before it started, and which single
-// step a one-step run covered.
-interface PanelReport {
-  ok: boolean;
-  durationMs: number;
-  steps: StepReport[];
-  vars: Record<string, string>;
-  error?: string;
-  oneStep?: string;
-  // When the run started, as the server stamped it. Only the printed report
-  // asks — on screen the run you are looking at is the one that just happened.
-  startedAt?: string;
-}
 
 interface FlowPanelProps {
   flow: Flow;
@@ -42,7 +29,7 @@ interface FlowPanelProps {
   onDelete: () => void;
   running: boolean;
   runningStep: string | null;
-  report: PanelReport | null;
+  report: RunReport | null;
   // Which environment the run resolved its {{vars}} against. Only the printed
   // report asks — a reader who was not here cannot tell staging from local.
   environmentName: string | null;
@@ -145,12 +132,9 @@ function StepSent({ rep }: { rep: StepReport }) {
   );
 }
 
-// What a shell step got back. stderr sits beside stdout rather than behind a
-// tab: a command that failed usually explained itself there, and that is the
-// first thing anyone reading a red step wants.
+// What a shell step got back, shown the way a shell test's panel shows it.
 function StepShellOutput({ rep }: { rep: StepReport }) {
   const { stdout, stderr, truncated } = rep.shell!;
-  const pretty = prettify(stdout || '');
   return (
     <div className="step-response">
       <StepSent rep={rep} />
@@ -160,19 +144,12 @@ function StepShellOutput({ rep }: { rep: StepReport }) {
       {rep.freshShell && (
         <p className="hint">Ran in a new shell — the one the earlier steps shared had gone.</p>
       )}
-      {stdout ? (
-        <>
-          <div className="field-label">stdout</div>
-          <CodeView className="step-code" value={pretty} json={isJsonText(pretty)} />
-        </>
-      ) : <p className="hint">No output on stdout.</p>}
-      {stderr && (
-        <>
-          <div className="field-label">stderr</div>
-          <CodeView className="step-code shell-stderr" value={stderr} />
-        </>
-      )}
-      {truncated && <p className="hint">Output truncated for the report.</p>}
+      <ShellOutputView
+        stdout={stdout}
+        stderr={stderr}
+        codeClass="step-code"
+        note={truncated && <p className="hint">Output truncated for the report.</p>}
+      />
     </div>
   );
 }
@@ -186,24 +163,7 @@ function statusClass(status: number | undefined): string {
 // happened in this order with these values, so re-sending the request on its
 // own no longer reproduces what you want to look at — the run has to keep it.
 function StepResponse({ rep }: { rep: StepReport }) {
-  const [tab, setTab] = useState('body');
-  const [raw, setRaw] = useState(false);
-  const [copied, setCopied] = useState(false);
   const res = rep.response!;
-  const pretty = useMemo(() => prettify(res.body), [res]);
-  const binary = res.bodyEncoding === 'base64';
-  const shown = raw ? res.body : pretty;
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(shown);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    } catch {
-      alert('Could not copy — the browser blocked clipboard access.');
-    }
-  }
-
   return (
     <div className="step-response">
       {/* Above the verdict, in the order it happened: the call, then what it
@@ -234,48 +194,22 @@ function StepResponse({ rep }: { rep: StepReport }) {
         </div>
       )}
 
-      <div className="tabs">
-        <button className={tab === 'body' ? 'active' : ''} onClick={() => setTab('body')}>Body</button>
-        <button className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>
-          Headers ({Object.keys(res.headers || {}).length})
-        </button>
-        <span className="spacer" />
-        {tab === 'body' && !binary && (
-          <div className="resp-actions">
-            {pretty !== res.body && (
-              <button className="mini-text" onClick={() => setRaw(!raw)}>{raw ? 'Pretty' : 'Raw'}</button>
-            )}
-            <button className="mini-text" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-          </div>
-        )}
-      </div>
-
-      <div className="tab-body">
-        {tab === 'body' && (binary ? (
-          // The bytes never travelled: a report carrying a few megabytes of
-          // base64 per step would make every run slow to look at.
+      <HttpBodyView
+        body={res.body}
+        headers={res.headers}
+        binary={res.bodyEncoding === 'base64'}
+        codeClass="step-code"
+        emptyHint="(empty body)"
+        // The bytes never travelled: a report carrying a few megabytes of
+        // base64 per step would make every run slow to look at.
+        binaryNote={(
           <p className="hint">
             Binary response ({fmtSize(res.size)}) — not kept in the run report.
             Open the request itself to download it.
           </p>
-        ) : (
-          <>
-            {shown
-              ? <CodeView className="step-code" value={shown} json={isJsonText(pretty)} />
-              : <p className="hint">(empty body)</p>}
-            {res.truncated && <p className="hint">Body truncated for the report.</p>}
-          </>
-        ))}
-        {tab === 'headers' && (
-          <table className="headers-view">
-            <tbody>
-              {Object.entries(res.headers || {}).map(([k, v]) => (
-                <tr key={k}><td className="hk">{k}</td><td className="hv">{v}</td></tr>
-              ))}
-            </tbody>
-          </table>
         )}
-      </div>
+        note={res.truncated && <p className="hint">Body truncated for the report.</p>}
+      />
     </div>
   );
 }

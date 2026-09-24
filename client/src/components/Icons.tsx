@@ -7,7 +7,7 @@ interface SvgProps {
   size?: number;
 }
 
-export function Svg({ children, size = 14 }: SvgProps) {
+function Svg({ children, size = 14 }: SvgProps) {
   return (
     <svg
       width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor"

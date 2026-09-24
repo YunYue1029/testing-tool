@@ -1,7 +1,8 @@
-import React, { useRef, useState } from 'react';
-import VarField from './VarField';
-import { IconClose } from './Icons';
-import { emptyFormRow } from '../util';
+import { useRef, useState } from 'react';
+import VarField from './VarField.tsx';
+import { IconClose } from './Icons.tsx';
+import useRowList from '../useRowList.ts';
+import { emptyFormRow, fmtSize } from '../util.ts';
 import type { FileMeta, FormRow, Vars } from '../types.ts';
 
 // Whichever fields a row is being edited through. Not Partial<FormRow>: the
@@ -18,13 +19,6 @@ interface FormRowPatch {
   fileHint?: string;
 }
 
-function humanSize(n: number | null | undefined): string {
-  if (n == null) return '';
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
-
 // multipart/form-data fields: each row is either a text value or a file. Files
 // are uploaded to the server as soon as they are picked, and the row keeps the
 // resulting id — so a saved request can be sent again later without re-picking.
@@ -38,26 +32,10 @@ interface FormDataEditorProps {
 export default function FormDataEditor(
   { rows, onChange, vars, onUploadFile }: FormDataEditorProps,
 ) {
-  const list = rows && rows.length ? rows : [emptyFormRow()];
+  const { shown, untouched, keyOf, update, remove } =
+    useRowList<FormRow, FormRowPatch>(rows, onChange, emptyFormRow());
   const [busy, setBusy] = useState<number | null>(null); // index currently uploading
   const fileRefs = useRef<Record<number, HTMLInputElement | null>>({});
-
-  function update(i: number, patch: FormRowPatch) {
-    let next: FormRow[] = list.map(
-      (r, idx) => (idx === i ? ({ ...r, ...patch } as FormRow) : r),
-    );
-    // Ensure a trailing empty row exists.
-    const last = next[next.length - 1];
-    if (last!.key || last!.value || ('fileId' in last! && last!.fileId)) {
-      next = [...next, emptyFormRow()];
-    }
-    onChange(next);
-  }
-
-  function remove(i: number) {
-    const next = list.filter((_, idx) => idx !== i);
-    onChange(next.length ? next : [emptyFormRow()]);
-  }
 
   async function pickFile(i: number, file: File | undefined) {
     if (!file) return;
@@ -75,8 +53,8 @@ export default function FormDataEditor(
   return (
     <table className="kv form-kv">
       <tbody>
-        {list.map((row, i) => (
-          <tr key={i}>
+        {shown.map((row, i) => (
+          <tr key={keyOf(row)}>
             <td className="kv-check">
               <input
                 type="checkbox"
@@ -121,7 +99,7 @@ export default function FormDataEditor(
                     title={('fileName' in row && row.fileName) || ('fileHint' in row && row.fileHint) || ''}
                   >
                     {row.fileName
-                      ? <>{row.fileName} <span className="hint-inline">{humanSize(row.fileSize)}</span></>
+                      ? <>{row.fileName} <span className="hint-inline">{fmtSize(row.fileSize)}</span></>
                       // An imported Postman file field: the export carries the
                       // exporting machine's path, never the bytes.
                       : row.fileHint
@@ -149,7 +127,7 @@ export default function FormDataEditor(
               )}
             </td>
             <td className="kv-del">
-              {(row.key || row.value || ('fileId' in row && row.fileId)) && (
+              {!untouched(row) && (
                 <button className="mini danger" title="Remove" onClick={() => remove(i)}>
                   <IconClose />
                 </button>

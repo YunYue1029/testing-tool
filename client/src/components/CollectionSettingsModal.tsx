@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import HelpTip from './HelpTip';
-import useAutoSave from '../useAutoSave';
-import { authFormState, authToStore } from '../util';
+import { useEffect } from 'react';
+import HelpTip from './HelpTip.tsx';
+import useAutoSave from '../useAutoSave.ts';
+import { authFormState, authToStore } from '../util.ts';
 import type { Auth, AuthForm, Collection } from '../types.ts';
 
 // Everything a collection is, edited in one place: the sidebar's pencil opens
@@ -13,26 +13,48 @@ interface CollectionSettingsModalProps {
   onClose: () => void;
 }
 
+// The dialog's fields, as typed.
+interface SettingsForm {
+  name: string;
+  auth: AuthForm;
+  baseUrl: string;
+}
+
+const formOf = (c: Collection): SettingsForm =>
+  ({ name: c.name || '', auth: authFormState(c.auth), baseUrl: c.baseUrl || '' });
+
+// What the form writes. An empty box is a slip, not a request for a
+// nameless collection.
+const fieldsOf = (f: SettingsForm, c: Collection) =>
+  ({ name: f.name.trim() || c.name, auth: authToStore(f.auth), baseUrl: f.baseUrl.trim() });
+
 export default function CollectionSettingsModal(
   { collection, onSave, onClose }: CollectionSettingsModalProps,
 ) {
-  const [auth, setAuth] = useState(() => authFormState(collection.auth));
-  const [name, setName] = useState(collection.name || '');
-  const [baseUrl, setBaseUrl] = useState(collection.baseUrl || '');
-  const set = (patch: Partial<AuthForm>) => setAuth((a) => ({ ...a, ...patch }));
-
-  // An empty box is a slip, not a request for a nameless collection.
-  const fields = useMemo(
-    () => ({ name: name.trim() || collection.name, auth: authToStore(auth), baseUrl: baseUrl.trim() }),
-    [name, auth, baseUrl, collection.name],
-  );
   // Saved as it is edited, like the requests inside it: a base URL changed on
   // the way to sending something is a change nobody comes back to confirm.
-  const autoSave = useAutoSave(fields, onSave);
+  const form = useAutoSave<SettingsForm>(() => formOf(collection), (f) => onSave(fieldsOf(f, collection)));
+  const { name, auth, baseUrl } = form.draft!;
+  const edit = (patch: Partial<SettingsForm>) => form.edit((f) => ({ ...f!, ...patch }));
+  const set = (patch: Partial<AuthForm>) => edit({ auth: { ...auth, ...patch } });
+
+  // The collection can change under the dialog — the poll brings in an edit
+  // made elsewhere — and a form copied once would go on showing the old
+  // values. Take the new ones when nothing here is waiting to be written and
+  // they differ from what this form would write; a save of our own answers
+  // with exactly that, so it changes nothing.
+  useEffect(() => {
+    if (form.dirty) return;
+    const mine = JSON.stringify(fieldsOf(form.draft!, collection));
+    const theirs = JSON.stringify(fieldsOf(formOf(collection), collection));
+    if (mine !== theirs) form.replace(formOf(collection));
+    // Only a new prop is a reason to look; the draft's own changes are edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collection]);
 
   async function close() {
     // Whatever was typed in the last 600ms is still only here.
-    await autoSave.flush();
+    await form.flush();
     onClose();
   }
 
@@ -51,7 +73,7 @@ export default function CollectionSettingsModal(
             value={name}
             placeholder={collection.name}
             autoFocus
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => edit({ name: e.target.value })}
             onKeyDown={(e) => { if (e.key === 'Enter') close(); }}
           />
         </div>
@@ -69,7 +91,7 @@ export default function CollectionSettingsModal(
             className="modal-name"
             value={baseUrl}
             placeholder="http://localhost:8001"
-            onChange={(e) => setBaseUrl(e.target.value)}
+            onChange={(e) => edit({ baseUrl: e.target.value })}
           />
         </div>
 
@@ -132,9 +154,9 @@ export default function CollectionSettingsModal(
 
         <div className="modal-actions">
           <span className="spacer" />
-          {autoSave.status && (
-            <span className={`save-status ${autoSave.status === 'Save failed' ? 'err' : ''}`}>
-              {autoSave.status}
+          {form.status && (
+            <span className={`save-status ${form.status === 'Save failed' ? 'err' : ''}`}>
+              {form.status}
             </span>
           )}
           <button className="btn-send" onClick={close}>Close</button>

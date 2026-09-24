@@ -1,9 +1,8 @@
-import React from 'react';
 import {
   maskDetail, maskHeaders, maskJsonBody, maskUrl, reportVars, scrubber, secretValues,
-} from '../report';
-import { fmtSize, prettify } from '../util';
-import type { Flow, StepReport, Vars } from '../types.ts';
+} from '../report.ts';
+import { fmtSize, prettify } from '../util.ts';
+import type { Flow, RunReport } from '../types.ts';
 
 // The run, written up for someone who was not at the keyboard: every step's
 // verdict and the checks behind it, and under each one the whole call — the
@@ -19,15 +18,7 @@ import type { Flow, StepReport, Vars } from '../types.ts';
 // hides the app and shows this, so Cmd-P on the page still prints it.
 interface ReportDocProps {
   flow: Flow;
-  report: {
-    ok: boolean;
-    durationMs: number;
-    steps: StepReport[];
-    vars: Vars;
-    error?: string;
-    oneStep?: string;
-    startedAt?: string;
-  };
+  report: RunReport;
   environmentName: string | null;
   // Whether tokens, passwords and cookies are printed as they ran. Off by
   // default — see report.ts.

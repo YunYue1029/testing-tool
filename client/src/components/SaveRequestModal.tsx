@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { folderPath, isShellTest } from '../util';
+import { useState } from 'react';
+import { folderPath, isShellTest } from '../util.ts';
 import type { Collection, SavedRequest } from '../types.ts';
 
 const NEW = '__new__';
@@ -34,6 +34,9 @@ export default function SaveRequestModal({
     target === currentCollectionId ? (request.folderId || ROOT) : ROOT
   );
   const [newColName, setNewColName] = useState('New Collection');
+  // Why the save was refused, under the fields, with the dialog left open
+  // so the name and the place chosen are not lost with it.
+  const [error, setError] = useState<string | null>(null);
   // A shell test is filed exactly like a request — same collections, same
   // folders — so only the words change.
   const what = isShellTest(request) ? 'shell test' : 'request';
@@ -48,12 +51,17 @@ export default function SaveRequestModal({
   }
 
   async function submit() {
-    await onSave({
-      name: name.trim() || (isShellTest(request) ? 'Untitled Shell Test' : 'Untitled Request'),
-      collectionId: target === NEW ? null : target,
-      newCollectionName: target === NEW ? (newColName.trim() || 'New Collection') : undefined,
-      folderId: target === NEW || folder === ROOT ? null : folder,
-    });
+    setError(null);
+    try {
+      await onSave({
+        name: name.trim() || (isShellTest(request) ? 'Untitled Shell Test' : 'Untitled Request'),
+        collectionId: target === NEW ? null : target,
+        newCollectionName: target === NEW ? (newColName.trim() || 'New Collection') : undefined,
+        folderId: target === NEW || folder === ROOT ? null : folder,
+      });
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   return (
@@ -107,6 +115,7 @@ export default function SaveRequestModal({
             </select>
           </>
         )}
+        {error && <p className="modal-error">⚠ Could not save: {error}</p>}
         <div className="modal-actions">
           <span className="spacer" />
           <button className="btn-secondary" onClick={onCancel}>Cancel</button>

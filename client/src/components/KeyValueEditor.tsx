@@ -1,6 +1,6 @@
-import React from 'react';
-import VarField from './VarField';
-import { emptyRow } from '../util';
+import VarField from './VarField.tsx';
+import useRowList from '../useRowList.ts';
+import { emptyRow } from '../util.ts';
 import type { Row, Vars } from '../types.ts';
 
 // Editable table of key/value rows with an enable checkbox. Always keeps one
@@ -18,26 +18,13 @@ interface KeyValueEditorProps {
 export default function KeyValueEditor(
   { rows, onChange, vars, keyPlaceholder = 'Key', valuePlaceholder = 'Value' }: KeyValueEditorProps,
 ) {
-  const list = rows && rows.length ? rows : [emptyRow()];
-
-  function update(i: number, patch: Partial<Row>) {
-    let next = list.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
-    // Ensure a trailing empty row exists.
-    const last = next[next.length - 1];
-    if (last!.key || last!.value) next = [...next, emptyRow()];
-    onChange(next);
-  }
-
-  function remove(i: number) {
-    const next = list.filter((_, idx) => idx !== i);
-    onChange(next.length ? next : [emptyRow()]);
-  }
+  const { shown, untouched, keyOf, update, remove } = useRowList(rows, onChange, emptyRow());
 
   return (
     <table className="kv">
       <tbody>
-        {list.map((row, i) => (
-          <tr key={i}>
+        {shown.map((row, i) => (
+          <tr key={keyOf(row)}>
             <td className="kv-check">
               <input
                 type="checkbox"
@@ -82,7 +69,7 @@ export default function KeyValueEditor(
                 )}
             </td>
             <td className="kv-del">
-              {(row.key || row.value) && (
+              {!untouched(row) && (
                 <button title="Remove" onClick={() => remove(i)}>×</button>
               )}
             </td>

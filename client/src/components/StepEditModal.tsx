@@ -1,12 +1,14 @@
-import React, { useEffect } from 'react';
-import { RequestOptions } from './AddStepModal';
-import RequestAuthEditor from './RequestAuthEditor';
-import CodeEditor from './CodeEditor';
+import { useEffect } from 'react';
+import { RequestOptions } from './AddStepModal.tsx';
+import RequestAuthEditor from './RequestAuthEditor.tsx';
+import KeyValueEditor from './KeyValueEditor.tsx';
+import CodeEditor from './CodeEditor.tsx';
+import useRowList from '../useRowList.ts';
 import {
   emptyInlineRequest, METHODS, fitToContent, isShellTest, copyableBody, withBodyOverride,
-} from '../util';
+} from '../util.ts';
 import type {
-  Assertion, AssertOp, Collection, Condition, InlineBodyType, InlineRequest, Row, Step,
+  Assertion, AssertOp, Collection, Condition, Extraction, InlineBodyType, InlineRequest, Step,
   StepMode, ValueSource,
 } from '../types.ts';
 
@@ -28,39 +30,6 @@ const PATHLESS = ['status', 'time', 'exit_code'];
 const OPS = ['eq', 'neq', 'exists', 'missing', 'contains', 'matches', 'lt', 'gt'];
 const NO_VALUE = ['exists', 'missing'];
 const BODY_TYPES = ['none', 'json', 'text'];
-
-// Edit a list of rows with a trailing blank, so there is nothing to click to
-// add one. A row counts as untouched only while it still equals the blank
-// template — every field of an assert row carries a default, so asking
-// whether any field "has a value" can neither spot a pristine row (which
-// used to get stored and then fail every run) nor keep a row whose only
-// edit so far is a dropdown.
-// A row of either list: an extraction or an assertion, both plain string maps
-// as far as this editor is concerned.
-type EditableRow = object;
-
-function rowEditor<T extends EditableRow>(
-  rows: T[] | undefined, onRows: (rows: T[]) => void, blank: T,
-) {
-  const field = (r: T, k: string) => (r as Record<string, unknown>)[k];
-  const untouched = (r: T) =>
-    Object.keys(blank).every((k) => (field(r, k) ?? '') === field(blank, k));
-  const stored = rows || [];
-  const shown = stored.length && untouched(stored[stored.length - 1]!)
-    ? stored
-    : [...stored, { ...blank }];
-  return {
-    shown,
-    untouched,
-    update: (i: number, patch: Partial<T>) => onRows(
-      shown.map((r, k) => (k === i ? { ...r, ...patch } : r)).filter((r) => !untouched(r)),
-    ),
-    // A row someone typed into, removed outright — clearing every field by
-    // hand to make it "untouched" again is not how anyone expects delete to
-    // work.
-    remove: (i: number) => onRows(shown.filter((_, k) => k !== i)),
-  };
-}
 
 // Everything about one step that isn't visible on the flow: what it runs, and
 // the extractions, assertions and script hung off it. A dialog rather than an
@@ -121,34 +90,17 @@ export default function StepEditModal(
   const setInline = (patch: Partial<InlineRequest>) =>
     set({ request: { ...emptyInlineRequest(), ...(step.request || {}), ...patch } });
 
-  // Headers and query params for an inline request: the same trailing-blank
-  // editing as the rows below, in two columns.
-  function inlineRows(key: 'headers' | 'params', placeholders: [string, string]) {
-    const ed = rowEditor<Row>(
-      (step.request || {})[key], (rows) => setInline({ [key]: rows }), { key: '', value: '' },
-    );
-    return (
-      <table className="kv">
-        <tbody>
-          {ed.shown.map((r, k) => (
-            <tr key={k}>
-              <td><input
-                value={r.key || ''} placeholder={placeholders[0]}
-                onChange={(e) => ed.update(k, { key: e.target.value })}
-              /></td>
-              <td><input
-                value={r.value || ''} placeholder={placeholders[1]}
-                onChange={(e) => ed.update(k, { value: e.target.value })}
-              /></td>
-              <td className="kv-del">
-                {!ed.untouched(r) && <button title="Remove" onClick={() => ed.remove(k)}>×</button>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  }
+  // The three lists hung off a step, each edited with a trailing blank so
+  // there is nothing to click to add a row. Every field of an assert row
+  // carries a default, so the blanks say what a pristine row looks like.
+  const wh = useRowList<Condition>(step.when, (when) => set({ when }), { var: '', op: 'missing', value: '' });
+  const ex = useRowList<Extraction>(
+    step.extract, (extract) => set({ extract }), { var: '', from: readsShell ? 'stdout' : 'body', path: '' },
+  );
+  const as = useRowList<Assertion>(
+    step.assert, (assert) => set({ assert }),
+    { source: readsShell ? 'exit_code' : 'status', path: '', op: 'eq', value: '' },
+  );
 
   return (
     // Every edit lands on the flow as it is typed, so there is nothing to
@@ -169,16 +121,10 @@ export default function StepEditModal(
         </div>
         <table className="kv">
           <tbody>
-            {(() => {
-              const wh = rowEditor<Condition>(
-                step.when,
-                (w) => set({ when: w }),
-                { var: '', op: 'missing', value: '' },
-              );
-              return wh.shown.map((c, k) => {
+            {wh.shown.map((c, k) => {
                 const update = (patch: Partial<Condition>) => wh.update(k, patch);
                 return (
-                  <tr key={k}>
+                  <tr key={wh.keyOf(c)}>
                     <td><input
                       value={c.var || ''}
                       placeholder="customer_id"
@@ -199,8 +145,7 @@ export default function StepEditModal(
                     </td>
                   </tr>
                 );
-              });
-            })()}
+              })}
           </tbody>
         </table>
 
@@ -353,10 +298,20 @@ export default function StepEditModal(
             />
 
             <div className="field-label">Headers</div>
-            {inlineRows('headers', ['Authorization', 'Bearer {{token}}'])}
+            <KeyValueEditor
+              rows={req.headers}
+              onChange={(headers) => setInline({ headers })}
+              keyPlaceholder="Authorization"
+              valuePlaceholder="Bearer {{token}}"
+            />
 
             <div className="field-label">Query params</div>
-            {inlineRows('params', ['page', '1'])}
+            <KeyValueEditor
+              rows={req.params}
+              onChange={(params) => setInline({ params })}
+              keyPlaceholder="page"
+              valuePlaceholder="1"
+            />
 
             <div className="field-label">
               Body
@@ -391,14 +346,8 @@ export default function StepEditModal(
         </div>
         <table className="kv">
           <tbody>
-            {(() => {
-              const ex = rowEditor(
-                step.extract,
-                (extract) => set({ extract }),
-                { var: '', from: readsShell ? 'stdout' : 'body', path: '' },
-              );
-              return ex.shown.map((e, k) => (
-                <tr key={k}>
+            {ex.shown.map((e, k) => (
+                <tr key={ex.keyOf(e)}>
                   <td><input
                     value={e.var || ''} placeholder="variable"
                     onChange={(ev) => ex.update(k, { var: ev.target.value })}
@@ -417,8 +366,7 @@ export default function StepEditModal(
                     {!ex.untouched(e) && <button title="Remove" onClick={() => ex.remove(k)}>×</button>}
                   </td>
                 </tr>
-              ));
-            })()}
+              ))}
           </tbody>
         </table>
 
@@ -429,16 +377,10 @@ export default function StepEditModal(
         </div>
         <table className="kv">
           <tbody>
-            {(() => {
-              const as = rowEditor(
-                step.assert,
-                (a) => set({ assert: a }),
-                { source: readsShell ? 'exit_code' : 'status', path: '', op: 'eq', value: '' },
-              );
-              return as.shown.map((a, k) => {
+            {as.shown.map((a, k) => {
                 const update = (patch: Partial<Assertion>) => as.update(k, patch);
                 return (
-                  <tr key={k}>
+                  <tr key={as.keyOf(a)}>
                     <td className="narrow"><select
                       value={a.source || (readsShell ? 'exit_code' : 'status')}
                       onChange={(e) => update({ source: e.target.value as ValueSource })}
@@ -464,8 +406,7 @@ export default function StepEditModal(
                     </td>
                   </tr>
                 );
-              });
-            })()}
+              })}
           </tbody>
         </table>
 

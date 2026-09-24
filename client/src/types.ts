@@ -9,14 +9,15 @@ export type {
   ApiKeyAuth, Assertion, AssertOp, Auth, AuthType, BearerAuth, BodyType,
   Collection, CollectionAuth, Condition, Environment, Extraction, FileMeta, Flow, FlowReport,
   FlowShell, Folder, FormFileRow, FormRow, FormTextRow, HeaderPair,
-  HttpRequest, HttpResponse, InlineBodyType, InlineRequest, Overrides,
-  RequestBody, ResponseSnapshot, ResponseSource, Row, SavedRequest,
-  SentSnapshot, ShellRequest, ShellResponse, ShellSource, Step, StepMode,
+  HttpRequest, HttpResponse, HttpRunResult, InlineBodyType, InlineRequest, Overrides,
+  RequestBody, ResponseSnapshot, ResponseSource, Row, SavedRequest, ScriptReport,
+  SentSnapshot, ShellRequest, ShellResponse, ShellRunResult, ShellSource, Step, StepMode,
   StepReport, ValueSource, Vars,
 } from '../../server/types.ts';
 
 import type {
-  Collection, Flow, Folder, HttpResponse, SavedRequest, ShellResponse,
+  Collection, Flow, FlowReport, Folder, HttpResponse, SavedRequest, ShellResponse, StepReport,
+  Vars,
 } from '../../server/types.ts';
 
 // ---- Client-only shapes ----
@@ -40,6 +41,20 @@ export interface AuthDescription {
   expr: string;
   resolved: boolean;
   missing: string[];
+}
+
+// A flow run as this client holds it: the server's report, plus the two
+// things the server never sends — the message from a run that failed before
+// it started, and which single step a one-step run covered. What the server
+// stamps on a real run (its name, when it started) is optional for that
+// reason.
+export interface RunReport extends Partial<FlowReport> {
+  ok: boolean;
+  durationMs: number;
+  steps: StepReport[];
+  vars: Vars;
+  error?: string;
+  oneStep?: string;
 }
 
 // What came back from a run, as the panels show it. A shell test answers with

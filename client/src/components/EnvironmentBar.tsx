@@ -1,9 +1,8 @@
-import React, { useState, useRef } from 'react';
-import KeyValueEditor from './KeyValueEditor';
-import { IconPencil, IconClose } from './Icons';
-import HelpTip from './HelpTip';
-import useAutoSave from '../useAutoSave';
-import { baseUrlVar } from '../util';
+import KeyValueEditor from './KeyValueEditor.tsx';
+import { IconPencil } from './Icons.tsx';
+import HelpTip from './HelpTip.tsx';
+import useAutoSave from '../useAutoSave.ts';
+import { baseUrlVar } from '../util.ts';
 import type { Collection, Environment, Row } from '../types.ts';
 
 // The environment being edited, as the dialog holds it: rows rather than a
@@ -34,30 +33,11 @@ interface EnvironmentBarProps {
 export default function EnvironmentBar({
   environments, activeEnvId, onSelect, onSaveEnv, onDeleteEnv, collections,
 }: EnvironmentBarProps) {
-  const [editing, setEditing] = useState<EnvDraft | null>(null); // env being edited
-
-  // Every collection's url variable, listed empty — the server declares them
-  // too, but the draft is what the next auto-save writes back, so they have to
-  // be in it.
-  function openNew() {
-    const urlVars = [...new Set(collections.map((c) => baseUrlVar(c.baseUrl)).filter(Boolean))];
-    const rows = urlVars.map((key) => ({ key: key as string, value: '', enabled: true }));
-    rows.push({ key: '', value: '', enabled: true });
-    setEditing({ id: null, name: 'New Environment', rows, isDefault: false });
-  }
-
-  function openEdit(env: Environment) {
-    const off = env.disabled || [];
-    const rows = Object.entries(env.variables || {})
-      .map(([key, value]) => ({ key, value, enabled: !off.includes(key) }));
-    rows.push({ key: '', value: '', enabled: true });
-    setEditing({ id: env.id, name: env.name, rows, isDefault: !!env.isDefault });
-  }
-
   // Written as the variables are edited, not when a button says so: an
   // environment is edited by opening it, changing a value and going back to
   // what you were doing, and a Save between those two is a step to forget.
-  const autoSave = useAutoSave(editing, async (draft: EnvDraft) => {
+  // Null while no environment is being edited.
+  const editor = useAutoSave<EnvDraft>(null, async (draft) => {
     // Unchecked rows are kept (value preserved) but listed as disabled so
     // they don't participate in {{var}} substitution.
     const variables: Record<string, string> = {};
@@ -74,19 +54,32 @@ export default function EnvironmentBar({
     // The draft stops being new here, or the next keystroke would create a
     // second environment instead of writing this one again. The id is the
     // save's own doing, so it is not an edit to save.
-    if (!draft.id) {
-      autoSaveRef.current.skipNext();
-      setEditing((d) => (d && !d.id ? { ...d, id: saved.id } : d));
-    }
+    if (!draft.id) editor.patch((d) => (d && !d.id ? { ...d, id: saved.id } : d));
   });
-  // The editor's own auto-save, reachable from inside the save it runs.
-  const autoSaveRef = useRef(autoSave);
-  autoSaveRef.current = autoSave;
+  const editing = editor.draft;
+
+  // Every collection's url variable, listed empty — the server declares them
+  // too, but the draft is what the next auto-save writes back, so they have to
+  // be in it.
+  function openNew() {
+    const urlVars = [...new Set(collections.map((c) => baseUrlVar(c.baseUrl)).filter(Boolean))];
+    const rows = urlVars.map((key) => ({ key: key as string, value: '', enabled: true }));
+    rows.push({ key: '', value: '', enabled: true });
+    editor.replace({ id: null, name: 'New Environment', rows, isDefault: false });
+  }
+
+  function openEdit(env: Environment) {
+    const off = env.disabled || [];
+    const rows = Object.entries(env.variables || {})
+      .map(([key, value]) => ({ key, value, enabled: !off.includes(key) }));
+    rows.push({ key: '', value: '', enabled: true });
+    editor.replace({ id: env.id, name: env.name, rows, isDefault: !!env.isDefault });
+  }
 
   async function closeEditor() {
     // Whatever was typed in the last 600ms is still only here.
-    await autoSave.flush();
-    setEditing(null);
+    await editor.flush();
+    editor.replace(null);
   }
 
   const activeEnv = environments.find((e) => e.id === activeEnvId);
@@ -131,7 +124,7 @@ export default function EnvironmentBar({
               className="modal-name"
               value={editing.name}
               placeholder="Environment name"
-              onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+              onChange={(e) => editor.edit({ ...editing, name: e.target.value })}
               onKeyDown={(e) => { if (e.key === 'Enter') closeEditor(); }}
             />
             {/* Which environment a request's or flow's vars read `value` from —
@@ -140,13 +133,13 @@ export default function EnvironmentBar({
               <input
                 type="checkbox"
                 checked={editing.isDefault}
-                onChange={(e) => setEditing({ ...editing, isDefault: e.target.checked })}
+                onChange={(e) => editor.edit({ ...editing, isDefault: e.target.checked })}
               /> Default environment — request and flow vars use its values wherever another
               environment has none of its own
             </label>
             <KeyValueEditor
               rows={editing.rows}
-              onChange={(rows) => setEditing({ ...editing, rows })}
+              onChange={(rows) => editor.edit({ ...editing, rows })}
               keyPlaceholder="variable"
               valuePlaceholder="value"
             />
@@ -157,14 +150,14 @@ export default function EnvironmentBar({
                   onClick={() => {
                     if (!confirm(`Delete environment "${editing.name}" and all its variables?`)) return;
                     onDeleteEnv(editing.id!);
-                    setEditing(null);
+                    editor.replace(null); // deleted: a pending write would only bring it back
                   }}
                 >Delete</button>
               )}
               <span className="spacer" />
-              {autoSave.status && (
-                <span className={`save-status ${autoSave.status === 'Save failed' ? 'err' : ''}`}>
-                  {autoSave.status}
+              {editor.status && (
+                <span className={`save-status ${editor.status === 'Save failed' ? 'err' : ''}`}>
+                  {editor.status}
                 </span>
               )}
               <button className="btn-send" onClick={closeEditor}>Close</button>

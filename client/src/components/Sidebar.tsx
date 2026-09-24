@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { authHeader, folderWithDescendants } from '../util';
-import { searchWorkspace, highlightParts } from '../search';
+import React, { memo, useState, useRef, useEffect, useMemo } from 'react';
+import { authHeader, folderWithDescendants } from '../util.ts';
+import { searchWorkspace, highlightParts } from '../search.ts';
 import {
   IconPlus, IconClose, IconPencil, IconFolder, IconCollection, IconImport, IconExport,
   IconCollapse, IconSearch, IconTerminal,
-} from './Icons';
+} from './Icons.tsx';
 
 import type { Collection, Flow, Folder, SavedRequest, SearchHit } from '../types.ts';
 
@@ -83,7 +83,12 @@ function Marked({ text, query }: { text: string; query: string }) {
   );
 }
 
-export default function Sidebar({
+// Memoised: App re-renders on every keystroke in the request panel, and the
+// tree here is the most expensive thing on the screen that a keystroke does
+// not change. Every handler prop comes from App with a fixed identity
+// (useEvents) and the envBar element is only rebuilt when its inputs move,
+// so a plain shallow comparison is enough to skip it.
+function Sidebar({
   envBar, collections, activeRequestId,
   onNewRequest, onNewShellTest, onNewShellTestIn, onOpenRequest,
   onNewCollection, onOpenCollectionSettings, onDeleteCollection, onDeleteRequest,
@@ -135,9 +140,12 @@ export default function Sidebar({
   );
   const searching = query.trim() !== '';
 
-  // A fresh query starts at the top; without this Enter could open whatever the
-  // old cursor position now points at.
-  useEffect(() => { setCursor(0); }, [query]);
+  // A fresh query starts at the top; without this Enter could open whatever
+  // the old cursor position now points at.
+  function changeQuery(next: string) {
+    setQuery(next);
+    setCursor(0);
+  }
 
   // Keep the selected row on screen when arrowing past the fold.
   useEffect(() => {
@@ -175,7 +183,7 @@ export default function Sidebar({
       openResult(results[cursor]);
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      if (query) setQuery('');
+      if (query) changeQuery('');
       else searchRef.current?.blur();
     }
   }
@@ -671,11 +679,11 @@ export default function Sidebar({
           ref={searchRef}
           value={query}
           placeholder="Search requests…"
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => changeQuery(e.target.value)}
           onKeyDown={onSearchKey}
         />
         {searching
-          ? <button className="mini" title="Clear (Esc)" onClick={() => setQuery('')}><IconClose /></button>
+          ? <button className="mini" title="Clear (Esc)" onClick={() => changeQuery('')}><IconClose /></button>
           : <kbd>⌘K</kbd>}
       </div>
 
@@ -794,3 +802,5 @@ export default function Sidebar({
     </aside>
   );
 }
+
+export default memo(Sidebar);

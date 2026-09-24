@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import VarField from './VarField';
-import RequestVarsEditor from './RequestVarsEditor';
-import HelpTip from './HelpTip';
-import { usedVarNames, requestVars } from '../util';
+import { useState } from 'react';
+import VarField from './VarField.tsx';
+import RequestVarsEditor from './RequestVarsEditor.tsx';
+import CodeEditor from './CodeEditor.tsx';
+import HelpTip from './HelpTip.tsx';
+import { usedVarNames, requestVars } from '../util.ts';
+import type { SaveStatus } from '../useAutoSave.ts';
 import type { Environment, ShellRequest, Vars } from '../types.ts';
 
 // A saved test that runs a command. It sits where the request panel sits and is
@@ -20,7 +22,7 @@ interface ShellTestPanelProps {
   onCancel: () => void;
   onSave: () => void;
   running: boolean;
-  saveStatus: string;
+  saveStatus: SaveStatus;
   vars: Vars;
   envVars: Vars;
   // Every environment and the one selected, for the vars editor's columns and
@@ -134,11 +136,12 @@ export default function ShellTestPanel({
                 into the active environment.
               </HelpTip>
             </label>
-            <textarea
-              className="body-text"
+            <CodeEditor
+              className="script-code"
+              lang="javascript"
               placeholder={"if (sh.exitCode === 0) {\n  env.set('row_count', sh.stdout.trim());\n}"}
               value={test.script || ''}
-              onChange={(e) => set({ script: e.target.value })}
+              onChange={(script) => set({ script })}
             />
           </div>
         )}

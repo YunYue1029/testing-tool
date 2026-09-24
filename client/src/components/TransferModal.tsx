@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import HelpTip from './HelpTip';
+import { useState } from 'react';
+import HelpTip from './HelpTip.tsx';
 
 // The sidebar's two halves, plus the context they both resolve against. Same
 // three sections the server splits an export/import into, in the order the
 // sidebar shows them.
-export const SECTIONS = [
+const SECTIONS = [
   {
     key: 'tests',
     label: 'Tests',

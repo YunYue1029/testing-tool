@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { requestGroups } from '../util';
+import { requestGroups } from '../util.ts';
 import type { Collection } from '../types.ts';
 
 // A collection's requests as <option>s, grouped by the folder they live in.

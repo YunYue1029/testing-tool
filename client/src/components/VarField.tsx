@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { VAR_RE } from '../util';
+import { VAR_RE } from '../util.ts';
 import type { Vars } from '../types.ts';
 
 // Input with {{var}} highlighting. The field itself keeps a transparent

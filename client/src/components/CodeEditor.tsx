@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Compartment, EditorState } from '@codemirror/state';
 import {
   EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers, placeholder as placeholderExt,
@@ -11,11 +11,11 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
 import { json } from '@codemirror/lang-json';
 import { javascript } from '@codemirror/lang-javascript';
-import { appHighlight, appTheme } from '../code/theme';
-import { varTokens, varsFacet } from '../code/vars';
+import { appHighlight, appTheme } from '../code/theme.ts';
+import { varTokens, varsFacet } from '../code/vars.ts';
 import type { Vars } from '../types.ts';
 
-export type CodeLang = 'json' | 'javascript' | 'text';
+type CodeLang = 'json' | 'javascript' | 'text';
 
 interface CodeEditorProps {
   value: string;

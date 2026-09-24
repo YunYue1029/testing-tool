@@ -13,7 +13,7 @@ import { newId } from '../../server/ids.ts';
 
 export { newId } from '../../server/ids.ts';
 
-// Re-exported so the rest of the client goes on importing them from './util'.
+// Re-exported so the rest of the client goes on importing them from './util.ts'.
 export {
   VAR_RE, DEFAULT_BASE_URL, substitute, rowsToObject, requestVars, collapseSlashes,
   folderChain, folderPath, folderWithDescendants, dyUrl, composeUrl, buildUrl,
@@ -100,7 +100,7 @@ export function fitToContent(el: HTMLElement | null): void {
 // Names of the {{var}} tokens substitution left behind — i.e. the variables
 // the active environment doesn't define. Builds its own regex per call: VAR_RE
 // carries /g state, so reusing it across calls skips matches.
-export function unresolvedVarNames(str: string | null | undefined): string[] {
+function unresolvedVarNames(str: string | null | undefined): string[] {
   return [...String(str || '').matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)].map((m) => m[1]!);
 }
 

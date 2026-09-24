@@ -1,6 +1,6 @@
-import React, { useLayoutEffect, useRef } from 'react';
-import RequestVarsEditor from './RequestVarsEditor';
-import { fitToContent } from '../util';
+import { useLayoutEffect, useRef } from 'react';
+import RequestVarsEditor from './RequestVarsEditor.tsx';
+import { fitToContent } from '../util.ts';
 import type { Environment, Flow, FlowShell, Vars } from '../types.ts';
 
 // Everything about a flow that is set once and then left alone — its name and

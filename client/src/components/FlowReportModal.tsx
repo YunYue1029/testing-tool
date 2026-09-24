@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import HelpTip from './HelpTip';
+import { useState } from 'react';
+import HelpTip from './HelpTip.tsx';
 
 // Turning the last run into something you can send someone. Answering the one
 // question here — whether the secrets the run used are written into the file —

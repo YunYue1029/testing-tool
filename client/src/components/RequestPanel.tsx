@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
-import KeyValueEditor from './KeyValueEditor';
-import FormDataEditor from './FormDataEditor';
-import VarField from './VarField';
-import CodeEditor from './CodeEditor';
-import RequestVarsEditor from './RequestVarsEditor';
-import RequestAuthEditor from './RequestAuthEditor';
-import HelpTip from './HelpTip';
+import { useState } from 'react';
+import KeyValueEditor from './KeyValueEditor.tsx';
+import FormDataEditor from './FormDataEditor.tsx';
+import VarField from './VarField.tsx';
+import CodeEditor from './CodeEditor.tsx';
+import RequestVarsEditor from './RequestVarsEditor.tsx';
+import RequestAuthEditor from './RequestAuthEditor.tsx';
+import HelpTip from './HelpTip.tsx';
 import {
   METHODS, VAR_RE, emptyBody, activeBody, requestVars, usedVarNames, formatJson,
-} from '../util';
+} from '../util.ts';
+import type { SaveStatus } from '../useAutoSave.ts';
 import type {
   AuthDescription, BodyType, Environment, FileMeta, HttpRequest, RequestBody,
   Vars,
@@ -21,7 +22,7 @@ interface RequestPanelProps {
   onCancel: () => void;
   onSave: () => void;
   sending: boolean;
-  saveStatus: string;
+  saveStatus: SaveStatus;
   vars: Vars;
   crumb: string | null;
   // Where the request actually goes, when that differs from what it is

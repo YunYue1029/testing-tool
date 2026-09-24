@@ -3,7 +3,7 @@ import {
   Decoration, EditorView, ViewPlugin, hoverTooltip,
 } from '@codemirror/view';
 import type { DecorationSet, ViewUpdate } from '@codemirror/view';
-import { VAR_RE } from '../util';
+import { VAR_RE } from '../util.ts';
 import type { Vars } from '../types.ts';
 
 // The active environment, as the editor sees it: null where the editor has no

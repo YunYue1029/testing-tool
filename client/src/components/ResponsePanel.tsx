@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import CodeView from './CodeView';
-import { prettify, isJsonText, fmtSize } from '../util';
-import type { ScriptReport } from '../../../server/types.ts';
-import type { RunResponse, ShellResponse } from '../types.ts';
+import React, { useState } from 'react';
+import HttpBodyView from './HttpBodyView.tsx';
+import ShellOutputView from './ShellOutputView.tsx';
+import { fmtSize } from '../util.ts';
+import type { RunResponse, ScriptReport, ShellResponse } from '../types.ts';
 
 function trunc(s: unknown, n = 48): string {
   const str = String(s);
@@ -40,19 +40,12 @@ function ScriptResult({ scriptResult }: { scriptResult: ScriptReport | null | un
 }
 
 // What a shell test got back. No tabs: a command has an exit code and two
-// streams, and stderr is where a command that failed explained itself — the
-// first thing anyone looking at a red exit code wants, not something to go
-// clicking for. The same shape a flow's shell step shows, for the same reason.
+// streams, shown the way a flow's shell step shows them.
 function ShellResult(
   { response, scriptResult, clear }:
   { response: ShellResponse; scriptResult: ScriptReport | null | undefined; clear: React.ReactNode },
 ) {
   const { exitCode, stdout, stderr } = response;
-  // A command that printed JSON — a curl, mostly — gets it laid out like a
-  // response body would be, with the raw stream a click away.
-  const [raw, setRaw] = useState(false);
-  const pretty = useMemo(() => prettify(stdout || ''), [stdout]);
-  const shown = raw ? stdout : pretty;
   return (
     <div className="response-panel">
       <div className="response-meta">
@@ -65,23 +58,7 @@ function ShellResult(
       <ScriptResult scriptResult={scriptResult} />
 
       <div className="tab-body shell-output">
-        {stdout ? (
-          <>
-            <div className="field-label stream-label">
-              stdout
-              {pretty !== stdout && (
-                <button className="mini-text" onClick={() => setRaw(!raw)}>{raw ? 'Pretty' : 'Raw'}</button>
-              )}
-            </div>
-            <CodeView className="resp-code" value={shown} json={isJsonText(shown)} />
-          </>
-        ) : <p className="hint">No output on stdout.</p>}
-        {stderr && (
-          <>
-            <div className="field-label">stderr</div>
-            <CodeView className="resp-code shell-stderr" value={stderr} />
-          </>
-        )}
+        <ShellOutputView stdout={stdout} stderr={stderr} codeClass="resp-code" />
       </div>
     </div>
   );
@@ -104,21 +81,12 @@ export default function ResponsePanel({
   // A shell test is not sending anything, and the wait is the command running.
   busyText = 'Sending request…', emptyText = 'Response will appear here',
 }: ResponsePanelProps) {
+  // Which tab, kept here rather than in the body view: that view unmounts
+  // while a request is in flight, and the tab you were on should survive it.
   const [tab, setTab] = useState('body');
-  const [raw, setRaw] = useState(false);
-  const [copied, setCopied] = useState(false);
 
-  // Both are computed before the early returns below, so a shell result — which
-  // has no body to prettify — passes through them untouched on its way to its
-  // own panel.
   const http = response && response.kind !== 'shell' ? response : null;
   const isBinary = !!http && http.bodyEncoding === 'base64';
-  const pretty = useMemo(
-    () => (http && !isBinary ? prettify(http.body) : ''),
-    [response, isBinary]
-  );
-  // Pretty or raw, JSON is JSON: the colouring and the folds apply to both.
-  const jsonBody = useMemo(() => isJsonText(pretty), [pretty]);
 
   const clear = onClear && (
     <button className="mini-text resp-clear" title="Clear the response" onClick={onClear}>Clear</button>
@@ -143,9 +111,6 @@ export default function ResponsePanel({
   const statusClass = response.status < 300 ? 'ok' : response.status < 400 ? 'warn' : 'err';
   const contentType = response.headers
     && (response.headers['content-type'] || response.headers['Content-Type']) || '';
-  const shown = raw ? response.body : pretty;
-  // Only worth offering when prettifying actually changed something.
-  const canToggle = !isBinary && pretty !== response.body;
 
   function download() {
     if (!http) return;
@@ -157,16 +122,6 @@ export default function ResponsePanel({
     a.download = fileNameFor(http.headers);
     a.click();
     URL.revokeObjectURL(a.href);
-  }
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(shown);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    } catch {
-      alert('Could not copy — the browser blocked clipboard access.');
-    }
   }
 
   return (
@@ -182,29 +137,15 @@ export default function ResponsePanel({
 
       <ScriptResult scriptResult={scriptResult} />
 
-      <div className="tabs">
-        <button className={tab === 'body' ? 'active' : ''} onClick={() => setTab('body')}>Body</button>
-        <button className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>
-          Headers ({Object.keys(response.headers || {}).length})
-        </button>
-        <span className="spacer" />
-        {tab === 'body' && (
-          <div className="resp-actions">
-            {canToggle && (
-              <button className="mini-text" onClick={() => setRaw(!raw)}>
-                {raw ? 'Pretty' : 'Raw'}
-              </button>
-            )}
-            {!isBinary && (
-              <button className="mini-text" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-            )}
-            <button className="mini-text" onClick={download}>Download</button>
-          </div>
-        )}
-      </div>
-
-      <div className="tab-body">
-        {tab === 'body' && (isBinary ? (
+      <HttpBodyView
+        body={response.body}
+        headers={response.headers}
+        binary={isBinary}
+        codeClass="resp-code"
+        tab={tab}
+        onTab={setTab}
+        actions={<button className="mini-text" onClick={download}>Download</button>}
+        binaryNote={(
           <div className="binary-note">
             <p>
               Binary response ({contentType || 'unknown type'}, {fmtSize(response.size)}) —
@@ -212,19 +153,8 @@ export default function ResponsePanel({
             </p>
             <button className="btn-secondary" onClick={download}>Download</button>
           </div>
-        ) : (
-          <CodeView className="resp-code" value={shown} json={jsonBody} />
-        ))}
-        {tab === 'headers' && (
-          <table className="headers-view">
-            <tbody>
-              {Object.entries(response.headers || {}).map(([k, v]) => (
-                <tr key={k}><td className="hk">{k}</td><td className="hv">{String(v)}</td></tr>
-              ))}
-            </tbody>
-          </table>
         )}
-      </div>
+      />
     </div>
   );
 }

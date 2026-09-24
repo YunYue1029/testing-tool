@@ -1,6 +1,7 @@
 import React from 'react';
-import HelpTip from './HelpTip';
-import { emptyRow } from '../util';
+import HelpTip from './HelpTip.tsx';
+import useRowList from '../useRowList.ts';
+import { emptyRow } from '../util.ts';
 import type { Environment, Row, Vars } from '../types.ts';
 
 // Values that belong to one request. A fetch-one call needs a {{user_id}} that
@@ -30,7 +31,12 @@ interface RequestVarsEditorProps {
 export default function RequestVarsEditor({
   rows, used, envVars, onChange, environments, activeEnvId, title = 'Request variables', help,
 }: RequestVarsEditorProps) {
-  const list = rows && rows.length ? rows : [emptyRow()];
+  // Untouched by its own rule: a value typed into another environment's
+  // column alone is an edit, and whether the row is enabled is not.
+  const { shown: list, untouched, keyOf, update, remove, add } = useRowList(
+    rows, onChange, emptyRow(),
+    (r) => !r.key && !r.value && !Object.values(r.byEnv || {}).some(Boolean),
+  );
   const named = new Set(list.filter((r) => r.key).map((r) => r.key));
 
   // The default environment's column comes first and is the row's own value;
@@ -53,30 +59,11 @@ export default function RequestVarsEditor({
     .filter((r) => r.key && r.enabled !== false && inPlay(r) && r.key in (envVars || {}))
     .map((r) => r.key);
 
-  const untouched = (r: Row) => !r.key && !r.value && !Object.values(r.byEnv || {}).some(Boolean);
-
-  function update(i: number, patch: Partial<Row>) {
-    let next = list.map((r, k) => (k === i ? { ...r, ...patch } : r));
-    // Always a blank row at the bottom, so adding one needs no button.
-    if (!untouched(next[next.length - 1]!)) next = [...next, emptyRow()];
-    onChange(next);
-  }
-
   function setEnvValue(i: number, envId: string, value: string) {
     const byEnv = { ...(list[i]!.byEnv || {}) };
     if (value) byEnv[envId] = value;
     else delete byEnv[envId];
     update(i, { byEnv });
-  }
-
-  function remove(i: number) {
-    const next = list.filter((_, k) => k !== i);
-    onChange(next.length ? next : [emptyRow()]);
-  }
-
-  function add(name: string) {
-    const kept = list.filter((r) => !untouched(r));
-    onChange([...kept, { key: name, value: '', enabled: true }, emptyRow()]);
   }
 
   const head = (e: Environment | null) => {
@@ -109,7 +96,7 @@ export default function RequestVarsEditor({
         <div className="var-chips">
           <span className="hint">Used here, not set anywhere:</span>
           {missing.map((n) => (
-            <button key={n} className="var-chip" title={`Add ${n}`} onClick={() => add(n)}>
+            <button key={n} className="var-chip" title={`Add ${n}`} onClick={() => add({ key: n, value: '', enabled: true })}>
               {n} ＋
             </button>
           ))}
@@ -128,7 +115,7 @@ export default function RequestVarsEditor({
           </thead>
           <tbody>
             {list.map((row, i) => (
-              <tr key={i}>
+              <tr key={keyOf(row)}>
                 <td className="kv-check">
                   <input
                     type="checkbox"

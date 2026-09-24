@@ -1,10 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, drawSelection, keymap, lineNumbers } from '@codemirror/view';
 import { bracketMatching, foldGutter, foldKeymap } from '@codemirror/language';
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
 import { json } from '@codemirror/lang-json';
-import { appHighlight, appTheme } from '../code/theme';
+import { appHighlight, appTheme } from '../code/theme.ts';
 
 interface CodeViewProps {
   value: string;
@@ -57,8 +57,13 @@ export default function CodeView({ value, json: isJson = false, className = '' }
     if (!v) return;
     const cur = v.state.doc.toString();
     if (cur !== value) v.dispatch({ changes: { from: 0, to: cur.length, insert: value } });
-    v.dispatch({ effects: lang.current.reconfigure(isJson ? json() : []) });
-  }, [value, isJson]);
+  }, [value]);
+
+  // The language on its own: reconfiguring it re-parses the whole document,
+  // which a body that merely changed does not need.
+  useEffect(() => {
+    view.current?.dispatch({ effects: lang.current.reconfigure(isJson ? json() : []) });
+  }, [isJson]);
 
   return <div className={`code-view ${className}`} ref={host} />;
 }

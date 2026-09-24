@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
-import HelpTip from './HelpTip';
-import { authFormState, authToStore } from '../util';
-import type { Auth, CollectionAuth } from '../types.ts';
-import type { AuthForm } from '../types.ts';
+import { useState } from 'react';
+import HelpTip from './HelpTip.tsx';
+import { authFormState, authToStore } from '../util.ts';
+import type { Auth, AuthForm, CollectionAuth } from '../types.ts';
 
 const TYPES = [
   ['inherit', 'Inherit from collection'],
@@ -17,9 +16,11 @@ const TYPES = [
 // from the token it was handed (a timezone claim, a tenant) answers the login
 // as that stale token's user.
 //
-// The fields of every type are held here rather than on the request, so
-// switching to No Auth and back doesn't lose the token you just typed; only
-// the chosen type's fields are handed up to be stored.
+// The chosen type and its fields are read off the request, so a copy that
+// arrives from elsewhere (the poll, an MCP edit) is what the picker shows.
+// Only the fields of the types not chosen are held here, so switching to No
+// Auth and back doesn't lose the token you just typed; only the chosen
+// type's fields are handed up to be stored.
 // `label` names the field, since what reads as "Type" next to a request's Auth
 // tab needs saying in full beside a step's body type and mode.
 interface RequestAuthEditorProps {
@@ -32,11 +33,20 @@ interface RequestAuthEditorProps {
 export default function RequestAuthEditor(
   { auth, collectionName, label = 'Type', onChange }: RequestAuthEditorProps,
 ) {
-  const [form, setForm] = useState(() => authFormState(auth, 'inherit'));
+  const stored = authFormState(auth, 'inherit');
+  const [held, setHeld] = useState(stored);
+  // The stored auth answers for its own type's fields; the rest come from
+  // what was last typed into them.
+  const form: AuthForm = {
+    ...held,
+    type: stored.type,
+    ...(stored.type === 'bearer' ? { token: stored.token, prefix: stored.prefix } : {}),
+    ...(stored.type === 'apikey' ? { header: stored.header, value: stored.value } : {}),
+  };
 
   function set(patch: Partial<AuthForm>) {
     const next = { ...form, ...patch };
-    setForm(next);
+    setHeld(next);
     onChange(authToStore(next));
   }
 
