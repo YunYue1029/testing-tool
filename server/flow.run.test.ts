@@ -23,9 +23,15 @@ process.env.DATA_DIR = DATA_DIR;
 // require() sat, keeps the original ordering: env var first, store second.
 const { ensureDirs, collections, environments, flows } = await import('./store.ts');
 const { runFlow } = await import('./flow.ts');
+const { SendError } = await import('./runner.ts');
 
 // ---- a target API to point the flow at ----
 let deleted: string[] = [];
+// A response whose headers have gone out but whose body never finishes, and a
+// way to know it has reached that point. Held open until the tests end, so the
+// target can close.
+const dangling: http.ServerResponse[] = [];
+let bodyStarted = (): void => {};
 const target = http.createServer((req, res) => {
   const url = ((req.url || '').split('?')[0].replace(/\/+$/, '')) || '/';
   const send = (status: number, payload: unknown) => {
@@ -33,6 +39,13 @@ const target = http.createServer((req, res) => {
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(body);
   };
+  if (req.method === 'GET' && url === '/slow-body') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.write('{"partial":');
+    dangling.push(res);
+    bodyStarted();
+    return undefined;
+  }
   if (req.method === 'POST' && url === '/widgets') return send(201, { data: { id: 'w7' } });
   if (req.method === 'GET' && url === '/widgets/w7') return send(200, { data: { id: 'w7', name: 'thing' } });
   if (req.method === 'DELETE' && url === '/widgets/w7') { deleted.push('w7'); return send(200, { ok: true }); }
@@ -112,6 +125,7 @@ test.before(async () => {
 });
 
 test.after(async () => {
+  for (const res of dangling) res.end();
   await new Promise<void>((resolve) => { target.close(() => resolve()); });
   fs.rmSync(DATA_DIR, { recursive: true, force: true });
 });
@@ -294,6 +308,10 @@ test('an inline step says for itself what auth it sends', async (t) => {
     // Saved before a step could say anything about auth: it inherited then, and
     // the absence has to keep meaning that.
     echoStep('says nothing', undefined),
+    // The two prefixes that are easy to confuse on the way through the store:
+    // none given means Bearer, an empty one means send the token bare.
+    echoStep('bearer with no prefix', { type: 'bearer', token: '{{tok}}' }),
+    echoStep('bearer with an empty prefix', { type: 'bearer', prefix: '', token: '{{tok}}' }),
   ]);
 
   await t.test('inherits the collection default when it says nothing else', () => {
@@ -311,6 +329,36 @@ test('an inline step says for itself what auth it sends', async (t) => {
 
   await t.test('still inherits when the step predates the setting', () => {
     assert.equal(sentBy(report, 3), 'Bearer secret');
+  });
+
+  await t.test('defaults the prefix when none was given, and drops it when it was empty', () => {
+    assert.equal(sentBy(report, 4), 'Bearer secret');
+    assert.equal(sentBy(report, 5), 'secret');
+  });
+});
+
+test('cancelling while a body is still streaming is a cancel, not a crash', async () => {
+  // The headers arrive at once and the body never ends. Giving up at that
+  // point used to surface as a raw AbortError from the body read — a 500 with
+  // a stack trace — where giving up before the headers was a quiet 499.
+  const streaming = new Promise<void>((resolve) => { bodyStarted = resolve; });
+  const ac = new AbortController();
+  const flow = await flows.save({
+    name: 'slow-body',
+    steps: [{ name: 'slow', mode: 'inline', request: { method: 'GET', url: '{{base_url}}/slow-body' } }],
+  });
+  const run = runFlow(flow, { environmentId: ENV, abortSignal: ac.signal });
+  await streaming;
+  // A moment for the headers to reach the client, so the abort lands on the
+  // body read rather than the connection.
+  await new Promise((resolve) => { setTimeout(resolve, 50); });
+  ac.abort();
+
+  await assert.rejects(run, (err: Error) => {
+    assert.ok(err instanceof SendError);
+    assert.equal(err.status, 499);
+    assert.equal(err.cancelled, true);
+    return true;
   });
 });
 

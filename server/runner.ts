@@ -7,15 +7,15 @@
 // JSON bodies, never sent form-data, and never ran scripts.
 import vm from 'node:vm';
 import { files, environments } from './store.ts';
-import { runCommand, CommandError } from './shell.ts';
+import { runCommand, CommandError, clampTimeout } from './shell.ts';
 import {
   substitute, rowsToObject, buildUrl, composeUrl, requestAuthHeader,
   applyCollectionBaseUrl, envVars, requestVars, DEFAULT_BASE_URL,
 } from './resolve.ts';
 import type {
-  AssertionResult, Collection, Environment, HttpResponse, Overrides, Row, RunnableHttpRequest,
-  HttpRunResult, ScriptReport, ScriptResponse, ScriptResult, SentFormRow, SentRequest,
-  SentShellCommand, ShellRequest, ShellResponse, ShellRunResult, Vars,
+  AssertionResult, Collection, CommandResult, Environment, HttpResponse, Overrides, Row,
+  RunnableHttpRequest, HttpRunResult, ScriptReport, ScriptResponse, ScriptResult, SentFormRow,
+  SentRequest, SentShellCommand, ShellRequest, ShellResponse, ShellRunResult, Vars,
 } from './types.ts';
 
 // A failure that carries the HTTP status and hint to answer with.
@@ -32,6 +32,15 @@ class SendError extends Error {
     this.status = status;
     this.hint = hint;
   }
+}
+
+// The one failure a cancelled run raises, whatever it was doing when the
+// caller left: a shell step's CommandError is turned into this too, so the
+// request handler has a single thing to recognise and answer nobody with.
+function cancelledSend(): SendError {
+  const e = new SendError(499, 'Cancelled');
+  e.cancelled = true;
+  return e;
 }
 
 // Is this response body safe to hand over as text? Content-Type decides when
@@ -104,13 +113,14 @@ async function performSend(
   const hasBody = !['GET', 'HEAD'].includes(method.toUpperCase())
     && outBody != null && outBody !== '';
 
-  const timeoutMs = Number(timeout) > 0 ? Math.min(Number(timeout), 600000) : 30000;
+  const timeoutMs = clampTimeout(timeout);
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signals = [timeoutSignal];
   if (abortSignal) signals.push(abortSignal);
 
   const started = Date.now();
   let upstream: Response;
+  let buf: Buffer;
   try {
     upstream = await fetch(url, {
       method: method.toUpperCase(),
@@ -118,12 +128,12 @@ async function performSend(
       body: hasBody ? outBody : undefined,
       signal: AbortSignal.any(signals),
     });
+    // The body streams in after the headers under the same signal, so giving
+    // up on it is the same cancel or timeout as giving up before them — not a
+    // raw AbortError for the handler to log as a crash.
+    buf = Buffer.from(await upstream.arrayBuffer());
   } catch (err) {
-    if (abortSignal && abortSignal.aborted) {
-      const e = new SendError(499, 'Cancelled');
-      e.cancelled = true;
-      throw e;
-    }
+    if (abortSignal && abortSignal.aborted) throw cancelledSend();
     if (timeoutSignal.aborted) {
       throw new SendError(
         504,
@@ -168,7 +178,6 @@ async function performSend(
   }
   const elapsed = Date.now() - started;
 
-  const buf = Buffer.from(await upstream.arrayBuffer());
   const respHeaders: Record<string, string> = {};
   upstream.headers.forEach((v, k) => { respHeaders[k] = v; });
 
@@ -332,32 +341,54 @@ function buildRequest(
   return { method: (request.method || 'GET').toUpperCase(), url, headers, body, form };
 }
 
+// The environment a caller named, by id or — MCP and the flow runner both
+// accept one — by name. The id is one file read; only a name has to look
+// through them all.
+async function findEnvironment(idOrName: string): Promise<Environment | null> {
+  const byId = await environments.get(idOrName);
+  if (byId) return byId;
+  return (await environments.list()).find((e) => e.name === idOrName) || null;
+}
+
+// The variables a run starts from: the environment, the collection's base_url
+// override, the request's own values, then anything the caller supplies (a
+// flow's run-scoped values, which must win over the stored environment).
+// `request` is whose own vars sit between the environment and `vars` — a
+// request's or a shell test's. Read here because which of a row's values
+// applies depends on the environment.
+function baseVars(
+  env: Environment | null,
+  collection: Collection | null,
+  request?: { vars?: Row[] } | null,
+  extra?: Vars,
+): Vars {
+  let vars = envVars(env);
+  if (vars.base_url == null || vars.base_url === '') vars.base_url = DEFAULT_BASE_URL;
+  vars = applyCollectionBaseUrl(vars, collection);
+  return { ...vars, ...requestVars(request, env && env.id), ...(extra || {}) };
+}
+
 interface ResolveVarsArgs {
   environmentId?: string | undefined;
+  // The environment already looked up, when the caller has it: a flow resolves
+  // its own once rather than once per step. Wins over environmentId.
+  environment?: Environment | null;
   collection: Collection | null;
-  // Whose own vars sit between the environment and `vars` — a request's or a
-  // shell test's. Read here because which of a row's values applies depends
-  // on the environment this call resolves.
   request?: { vars?: Row[] } | null;
   vars?: Vars;
 }
 
-// The variables a run starts from: the environment, the collection's base_url
-// override, then anything the caller supplies (a flow's run-scoped values,
-// which must win over the stored environment).
+// baseVars with the environment looked up by name, for the callers that only
+// have the name.
 async function resolveVars(
-  { environmentId, collection, request, vars: extra }: ResolveVarsArgs,
+  { environmentId, environment, collection, request, vars: extra }: ResolveVarsArgs,
 ): Promise<{ vars: Vars; env: Environment | null }> {
-  let env: Environment | null = null;
-  if (environmentId) {
-    const list = await environments.list();
-    env = list.find((e) => e.id === environmentId || e.name === environmentId) || null;
+  let env: Environment | null = environment || null;
+  if (!env && environmentId) {
+    env = await findEnvironment(environmentId);
     if (!env) throw new SendError(400, `Environment "${environmentId}" not found`);
   }
-  let vars = envVars(env);
-  if (vars.base_url == null || vars.base_url === '') vars.base_url = DEFAULT_BASE_URL;
-  vars = applyCollectionBaseUrl(vars, collection);
-  return { vars: { ...vars, ...requestVars(request, env && env.id), ...(extra || {}) }, env };
+  return { vars: baseVars(env, collection, request, extra), env };
 }
 
 // Where a script's env.set() calls end up. Into the stored environment for a
@@ -386,6 +417,62 @@ async function persistScriptVars(
 }
 
 export type SetVar = (k: string, v: string) => void;
+
+// A test's own script, and where what it env.set() ends up. The same act for
+// both kinds of test — only what `res` is shaped from differs — so the
+// bookkeeping around it lives once: what changed, whether it was persisted,
+// and what to report about the script.
+async function runOwnScript(
+  script: string | undefined,
+  response: ScriptResponse,
+  vars: Vars,
+  env: Environment | null,
+  onSetVar?: SetVar,
+  extra?: Record<string, unknown>,
+): Promise<{ script?: ScriptReport; vars: Vars }> {
+  const changes: Vars = {};
+  const result = runScript(script, response, {
+    getVar: (k) => (Object.prototype.hasOwnProperty.call(changes, k) ? changes[k] : vars[k]),
+    setVar: (k, v) => {
+      changes[k] = v;
+      if (onSetVar) onSetVar(k, v);
+    },
+    extra,
+  });
+  const saved = await persistScriptVars(result, changes, env, onSetVar);
+  return {
+    script: result.ran
+      ? { ...(saved ? { saved } : {}), ...(result.error ? { error: result.error } : {}) }
+      : undefined,
+    vars: changes,
+  };
+}
+
+// A command's result as a script sees it. `res` is shaped from the command so
+// one script API covers both kinds of test: the exit code is the status,
+// stdout is the body. `sh` is there for what that shape has no room for —
+// stderr, and the exit code under its own name.
+function shellScriptBindings(
+  result: CommandResult,
+): { response: ScriptResponse; extra: Record<string, unknown> } {
+  return {
+    response: {
+      status: result.exitCode,
+      statusText: '',
+      headers: {},
+      cookies: {},
+      body: result.stdout,
+    },
+    extra: {
+      sh: {
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        timeMs: result.timeMs,
+      },
+    },
+  };
+}
 
 export interface RunShellRequestArgs {
   collection: Collection | null;
@@ -439,11 +526,7 @@ async function runShellRequest({
     });
   } catch (err) {
     if (!(err instanceof CommandError)) throw err;
-    if (err.cancelled) {
-      const e = new SendError(499, 'Cancelled');
-      e.cancelled = true;
-      throw e;
-    }
+    if (err.cancelled) throw cancelledSend();
     // A command that could not run at all — no command written, killed on the
     // timeout, no such directory. A command that ran and exited non-zero is not
     // this: that is a result, and it comes back below as one.
@@ -461,48 +544,20 @@ async function runShellRequest({
     size: Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr),
   };
 
-  const changes: Vars = {};
-  const script = runScript(request.script, {
-    // Shaped from the command so one script API covers both kinds of test: the
-    // exit code is the status, stdout is the body. `sh` is there for what that
-    // shape has no room for — stderr, and the exit code under its own name.
-    status: result.exitCode,
-    statusText: '',
-    headers: {},
-    cookies: {},
-    body: result.stdout,
-  }, {
-    getVar: (k) => (Object.prototype.hasOwnProperty.call(changes, k) ? changes[k] : vars[k]),
-    setVar: (k, v) => {
-      changes[k] = v;
-      if (onSetVar) onSetVar(k, v);
-    },
-    extra: {
-      sh: {
-        exitCode: result.exitCode,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        timeMs: result.timeMs,
-      },
-    },
-  });
+  const bindings = shellScriptBindings(result);
+  const { script, vars: changes } = await runOwnScript(
+    request.script, bindings.response, vars, env, onSetVar, bindings.extra,
+  );
 
-  const saved = await persistScriptVars(script, changes, env, onSetVar);
-
-  return {
-    request: sent,
-    response,
-    script: script.ran
-      ? { ...(saved ? { saved } : {}), ...(script.error ? { error: script.error } : {}) } satisfies ScriptReport
-      : undefined,
-    vars: changes,
-  };
+  return { request: sent, response, script, vars: changes };
 }
 
 export interface RunRequestArgs {
   collection: Collection | null;
   request: RunnableHttpRequest;
   environmentId?: string | undefined;
+  // Already resolved by the caller; see ResolveVarsArgs.
+  environment?: Environment | null;
   vars?: Vars;
   overrides?: Overrides;
   timeout?: number;
@@ -515,8 +570,8 @@ export interface RunRequestArgs {
 // Run one request end to end. Returns what was sent, what came back, and what
 // the script did.
 async function runRequest({
-  collection, request, environmentId, vars: extraVars, overrides, timeout, abortSignal,
-  onSetVar,
+  collection, request, environmentId, environment, vars: extraVars, overrides, timeout,
+  abortSignal, onSetVar,
 }: RunRequestArgs): Promise<HttpRunResult> {
   // The request's own values sit between the environment and whatever the
   // caller passes: they beat the environment (that is the point of keeping an
@@ -524,6 +579,7 @@ async function runRequest({
   // created — must still beat the one saved on the request.
   const { vars, env } = await resolveVars({
     environmentId,
+    environment,
     collection,
     request,
     vars: extraVars,
@@ -540,16 +596,7 @@ async function runRequest({
     throw err;
   }
 
-  const changes: Vars = {};
-  const script = runScript(request.script, response, {
-    getVar: (k) => (Object.prototype.hasOwnProperty.call(changes, k) ? changes[k] : vars[k]),
-    setVar: (k, v) => {
-      changes[k] = v;
-      if (onSetVar) onSetVar(k, v);
-    },
-  });
-
-  const saved = await persistScriptVars(script, changes, env, onSetVar);
+  const { script, vars: changes } = await runOwnScript(request.script, response, vars, env, onSetVar);
 
   return {
     // What went out rather than what is stored: {{vars}} resolved, the folder
@@ -562,13 +609,12 @@ async function runRequest({
       body: sent.body, form: sent.form,
     },
     response,
-    script: script.ran
-      ? { ...(saved ? { saved } : {}), ...(script.error ? { error: script.error } : {}) }
-      : undefined,
+    script,
     vars: changes,
   };
 }
 
 export {
-  SendError, runScript, buildRequest, resolveVars, runRequest, runShellRequest,
+  SendError, cancelledSend, runScript, buildRequest, baseVars, findEnvironment, resolveVars,
+  runRequest, runShellRequest, shellScriptBindings,
 };

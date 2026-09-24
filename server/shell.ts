@@ -22,6 +22,13 @@ const MAX_OUTPUT = 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30000;
 const MAX_TIMEOUT_MS = 600000;
 
+// How long a command — or a request, which runner.ts bounds the same way — may
+// take: what the caller asked for, capped, or the default when it said
+// nothing. Both are a person waiting on a test, so both get the same bounds.
+function clampTimeout(timeout: number | undefined): number {
+  return Number(timeout) > 0 ? Math.min(Number(timeout), MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
+}
+
 // A command that never produced a verdict — it could not start, it ran out of
 // time, or the run was cancelled. Distinct from a command that ran and exited
 // non-zero, which is a result the step gets to assert on.
@@ -33,6 +40,14 @@ class CommandError extends Error {
     super(message);
     this.hint = hint;
   }
+}
+
+// The one way a cancelled command fails, so every path that gives up on one
+// is recognised alike by whoever catches it.
+function cancelledCommand(): CommandError {
+  const e = new CommandError('Cancelled');
+  e.cancelled = true;
+  return e;
 }
 
 export interface RunCommandArgs {
@@ -52,9 +67,7 @@ function runCommand({ command, cwd, timeout, abortSignal }: RunCommandArgs = {})
   const cmd = String(command || '').trim();
   if (!cmd) return Promise.reject(new CommandError('This step has no command yet'));
 
-  const timeoutMs = Number(timeout) > 0
-    ? Math.min(Number(timeout), MAX_TIMEOUT_MS)
-    : DEFAULT_TIMEOUT_MS;
+  const timeoutMs = clampTimeout(timeout);
 
   const started = Date.now();
   return new Promise<CommandResult>((resolve, reject) => {
@@ -75,11 +88,7 @@ function runCommand({ command, cwd, timeout, abortSignal }: RunCommandArgs = {})
 
       if (!err) return resolve({ exitCode: 0, stdout: out, stderr: errOut, timeMs });
 
-      if (abortSignal && abortSignal.aborted) {
-        const e = new CommandError('Cancelled');
-        e.cancelled = true;
-        return reject(e);
-      }
+      if (abortSignal && abortSignal.aborted) return reject(cancelledCommand());
       if (err.killed) {
         return reject(new CommandError(
           `The command did not finish within ${timeoutMs / 1000}s — it was killed.`,
@@ -321,15 +330,9 @@ class ShellSession {
       return Promise.reject(new CommandError('This shell session is already running a command'));
     }
     if (this.disposed) return Promise.reject(new CommandError('This shell session has closed'));
-    if (abortSignal && abortSignal.aborted) {
-      const e = new CommandError('Cancelled');
-      e.cancelled = true;
-      return Promise.reject(e);
-    }
+    if (abortSignal && abortSignal.aborted) return Promise.reject(cancelledCommand());
 
-    const timeoutMs = Number(timeout) > 0
-      ? Math.min(Number(timeout), MAX_TIMEOUT_MS)
-      : DEFAULT_TIMEOUT_MS;
+    const timeoutMs = clampTimeout(timeout);
 
     // A shell only when there isn't one: the first command of the run starts
     // it, and a later one only after something killed it.
@@ -366,11 +369,7 @@ class ShellSession {
       }, timeoutMs);
 
       if (abortSignal) {
-        p.onAbort = () => {
-          const e = new CommandError('Cancelled');
-          e.cancelled = true;
-          this.fail(e);
-        };
+        p.onAbort = () => this.fail(cancelledCommand());
         abortSignal.addEventListener('abort', p.onAbort, { once: true });
       }
 
@@ -407,9 +406,7 @@ class ShellSession {
     // A run that was cancelled mid-command still has one waiting on a verdict
     // it is never going to get.
     if (this.pending) {
-      const e = new CommandError('Cancelled');
-      e.cancelled = true;
-      this.fail(e);
+      this.fail(cancelledCommand());
       return;
     }
     const child = this.child;
@@ -425,6 +422,5 @@ class ShellSession {
 }
 
 export {
-  runCommand, CommandError, MAX_OUTPUT, DEFAULT_TIMEOUT_MS,
-  ShellSession, SESSIONS_SUPPORTED, SESSION_SHELL,
+  runCommand, CommandError, clampTimeout, ShellSession, SESSIONS_SUPPORTED,
 };

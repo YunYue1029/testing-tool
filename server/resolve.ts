@@ -115,9 +115,8 @@ function dyUrl(folders: Folder[] | undefined, folderId: string | null | undefine
 }
 
 // Expand the {{dy_url}} token to {{base_url}} + folder path. A url without the
-// token is returned unchanged (folders only affect requests that opt in).
-// A url without the token comes back exactly as it was handed over, undefined
-// included — folders only affect requests that opt in.
+// token comes back exactly as it was handed over, undefined included — folders
+// only affect requests that opt in.
 function composeUrl(
   folders: Folder[] | undefined, folderId: string | null | undefined, requestUrl: string,
 ): string;

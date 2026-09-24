@@ -31,6 +31,26 @@ function errCode(err: unknown): string | undefined {
     : undefined;
 }
 
+// Ids come from client JSON and end up in file paths. Ours are base36 (ids.ts);
+// the tests and older imports also carry hyphens and underscores. Anything
+// else — a dot, a slash — could name a file outside the directory it was
+// meant for, so it is treated as no record at all rather than joined onto a path.
+const SAFE_ID = /^[A-Za-z0-9_-]+$/;
+function isSafeId(id: unknown): id is string {
+  return typeof id === 'string' && SAFE_ID.test(id);
+}
+
+// A caller-supplied id that cannot name a file. Carries the status the API
+// answers with, the way express's own body-parser errors do, so index.ts can
+// treat the two alike.
+class InvalidId extends Error {
+  status = 400;
+
+  constructor(id: string) {
+    super(`"${id}" is not a valid id`);
+  }
+}
+
 async function ensureDirs(): Promise<void> {
   await fs.mkdir(COLLECTIONS_DIR, { recursive: true });
   await fs.mkdir(ENVIRONMENTS_DIR, { recursive: true });
@@ -95,13 +115,55 @@ async function listFrom<T>(dir: string): Promise<T[]> {
     if (errCode(err) === 'ENOENT') return [];
     throw err;
   }
-  const items: T[] = [];
-  for (const f of files) {
-    if (!f.endsWith('.json')) continue;
-    const data = await readJson<T | null>(path.join(dir, f), null);
-    if (data) items.push(data);
-  }
-  return items;
+  const names = files.filter((f) => f.endsWith('.json'));
+  const items: Array<T | null> = new Array(names.length).fill(null);
+  await Promise.all(names.map(async (f, i) => {
+    const file = path.join(dir, f);
+    try {
+      items[i] = await readJson<T | null>(file, null);
+    } catch (err) {
+      // One file left half-edited by hand must not take every list endpoint
+      // down with it; say which one and carry on without it.
+      if (!(err instanceof SyntaxError)) throw err;
+      console.error(`${file} is not valid JSON, skipping it: ${err.message}`);
+    }
+  }));
+  return items.filter((x): x is T => !!x);
+}
+
+// A directory of <id>.json records, which is what each of the three stores
+// below is. Reading, listing and removing are the same for all of them; what
+// differs is the shape a save normalises to, which each store keeps for itself.
+function jsonDir<T>(dir: string, lockPrefix: string) {
+  const file = (id: string): string => path.join(dir, `${id}.json`);
+  const lock = <R>(id: string, fn: () => Promise<R>): Promise<R> => withLock(`${lockPrefix}:${id}`, fn);
+  return {
+    file,
+    lock,
+    // The id a save writes under: the caller's, once it is known to name a
+    // file in this directory and nothing beyond it, else a fresh one.
+    idFor(supplied: string | undefined): string {
+      if (!supplied) return newId();
+      if (!isSafeId(supplied)) throw new InvalidId(supplied);
+      return supplied;
+    },
+    list: (): Promise<T[]> => listFrom<T>(dir),
+    get: (id: string): Promise<T | null> =>
+      (isSafeId(id) ? readJson<T | null>(file(id), null) : Promise.resolve(null)),
+    remove(id: string): Promise<boolean> {
+      if (!isSafeId(id)) return Promise.resolve(false);
+      return lock(id, async () => {
+        try {
+          await fs.unlink(file(id));
+          bumpRev();
+          return true;
+        } catch (err) {
+          if (errCode(err) === 'ENOENT') return false;
+          throw err;
+        }
+      });
+    },
+  };
 }
 
 // The stored shape of a collection, from whatever a caller supplied.
@@ -128,15 +190,15 @@ type CollectionMutator =
   (cur: Collection) => CollectionInput | null | Promise<CollectionInput | null>;
 
 // ---- Collections ----
+const collectionFiles = jsonDir<Collection>(COLLECTIONS_DIR, 'col');
 const collections = {
-  list: (): Promise<Collection[]> => listFrom<Collection>(COLLECTIONS_DIR),
-  get: (id: string): Promise<Collection | null> =>
-    readJson<Collection | null>(path.join(COLLECTIONS_DIR, `${id}.json`), null),
+  list: collectionFiles.list,
+  get: collectionFiles.get,
   save(collection: CollectionInput): Promise<Collection> {
-    const id = collection.id || newId();
+    const id = collectionFiles.idFor(collection.id);
     const record = shapeCollection(collection, id);
-    return withLock(`col:${id}`, async () => {
-      await writeJson(path.join(COLLECTIONS_DIR, `${id}.json`), record);
+    return collectionFiles.lock(id, async () => {
+      await writeJson(collectionFiles.file(id), record);
       return record;
     });
   },
@@ -149,8 +211,9 @@ const collections = {
   // `mutate` gets the current record and returns the new one, or null to
   // abort (e.g. the target request no longer exists).
   update(id: string, mutate: CollectionMutator): Promise<Collection | null> {
-    return withLock(`col:${id}`, async () => {
-      const file = path.join(COLLECTIONS_DIR, `${id}.json`);
+    if (!isSafeId(id)) return Promise.resolve(null);
+    return collectionFiles.lock(id, async () => {
+      const file = collectionFiles.file(id);
       const current = await readJson<Collection | null>(file, null);
       if (!current) return null;
       const next = await mutate(current);
@@ -160,29 +223,18 @@ const collections = {
       return record;
     });
   },
-  remove(id: string): Promise<boolean> {
-    return withLock(`col:${id}`, async () => {
-      try {
-        await fs.unlink(path.join(COLLECTIONS_DIR, `${id}.json`));
-        bumpRev();
-        return true;
-      } catch (err) {
-        if (errCode(err) === 'ENOENT') return false;
-        throw err;
-      }
-    });
-  },
+  remove: collectionFiles.remove,
 };
 
 // ---- Environments ----
+const environmentFiles = jsonDir<Environment>(ENVIRONMENTS_DIR, 'env');
 const environments = {
-  list: (): Promise<Environment[]> => listFrom<Environment>(ENVIRONMENTS_DIR),
-  get: (id: string): Promise<Environment | null> =>
-    readJson<Environment | null>(path.join(ENVIRONMENTS_DIR, `${id}.json`), null),
+  list: environmentFiles.list,
+  get: environmentFiles.get,
   async save(env: EnvironmentInput): Promise<Environment> {
-    const id = env.id || newId();
-    const file = path.join(ENVIRONMENTS_DIR, `${id}.json`);
-    const record = await withLock(`env:${id}`, async () => {
+    const id = environmentFiles.idFor(env.id);
+    const file = environmentFiles.file(id);
+    const record = await environmentFiles.lock(id, async () => {
       // The editor saves name and variables as they are typed and says
       // nothing about being the default, so a save that leaves the flag out
       // keeps what is stored rather than clearing it.
@@ -204,8 +256,8 @@ const environments = {
     if (record.isDefault) {
       for (const other of await environments.list()) {
         if (other.id === id || !other.isDefault) continue;
-        await withLock(`env:${other.id}`, async () => {
-          const f = path.join(ENVIRONMENTS_DIR, `${other.id}.json`);
+        await environmentFiles.lock(other.id, async () => {
+          const f = environmentFiles.file(other.id);
           const cur = await readJson<Environment | null>(f, null);
           if (!cur || !cur.isDefault) return;
           const { isDefault: _was, ...rest } = cur;
@@ -220,8 +272,8 @@ const environments = {
   // A key an environment already has keeps its value.
   async declare(keys: string[]): Promise<void> {
     for (const { id } of await environments.list()) {
-      await withLock(`env:${id}`, async () => {
-        const file = path.join(ENVIRONMENTS_DIR, `${id}.json`);
+      await environmentFiles.lock(id, async () => {
+        const file = environmentFiles.file(id);
         const cur = await readJson<Environment | null>(file, null);
         if (!cur) return;
         const vars = cur.variables || {};
@@ -235,18 +287,7 @@ const environments = {
       });
     }
   },
-  remove(id: string): Promise<boolean> {
-    return withLock(`env:${id}`, async () => {
-      try {
-        await fs.unlink(path.join(ENVIRONMENTS_DIR, `${id}.json`));
-        bumpRev();
-        return true;
-      } catch (err) {
-        if (errCode(err) === 'ENOENT') return false;
-        throw err;
-      }
-    });
-  },
+  remove: environmentFiles.remove,
 };
 
 // ---- Flows ----
@@ -280,7 +321,15 @@ function isAuthType(v: unknown): v is AuthType {
 function inlineAuth(a: Partial<Record<string, unknown>> | undefined): Auth {
   const str = (v: unknown): string => (typeof v === 'string' ? v : '');
   const type: AuthType = a && isAuthType(a.type) ? a.type : 'inherit';
-  if (type === 'bearer') return { type, token: str(a?.token), prefix: str(a?.prefix) };
+  if (type === 'bearer') {
+    // A prefix left out means "Bearer" and an empty one means send the token
+    // bare (see BearerAuth), so the absence has to survive the save.
+    return {
+      type,
+      token: str(a?.token),
+      ...(typeof a?.prefix === 'string' ? { prefix: a.prefix } : {}),
+    };
+  }
   if (type === 'apikey') return { type, header: str(a?.header), value: str(a?.value) };
   return { type };
 }
@@ -299,12 +348,12 @@ function inlineRequest(r: Partial<InlineRequest> | undefined): InlineRequest | u
   };
 }
 
+const flowFiles = jsonDir<Flow>(FLOWS_DIR, 'flow');
 const flows = {
-  list: (): Promise<Flow[]> => listFrom<Flow>(FLOWS_DIR),
-  get: (id: string): Promise<Flow | null> =>
-    readJson<Flow | null>(path.join(FLOWS_DIR, `${id}.json`), null),
+  list: flowFiles.list,
+  get: flowFiles.get,
   save(flow: FlowInput): Promise<Flow> {
-    const id = flow.id || newId();
+    const id = flowFiles.idFor(flow.id);
     const record: Flow = {
       id,
       name: flow.name || 'Untitled Flow',
@@ -380,23 +429,12 @@ const flows = {
       })),
       updatedAt: new Date().toISOString(),
     };
-    return withLock(`flow:${id}`, async () => {
-      await writeJson(path.join(FLOWS_DIR, `${id}.json`), record);
+    return flowFiles.lock(id, async () => {
+      await writeJson(flowFiles.file(id), record);
       return record;
     });
   },
-  remove(id: string): Promise<boolean> {
-    return withLock(`flow:${id}`, async () => {
-      try {
-        await fs.unlink(path.join(FLOWS_DIR, `${id}.json`));
-        bumpRev();
-        return true;
-      } catch (err) {
-        if (errCode(err) === 'ENOENT') return false;
-        throw err;
-      }
-    });
-  },
+  remove: flowFiles.remove,
 };
 
 // ---- Flow folders ----
@@ -533,11 +571,11 @@ const files = {
   async read(id: string | undefined): Promise<StoredFile | null> {
     // ids come from client JSON, so reject anything that isn't one of ours
     // before it reaches path.join and escapes the uploads directory.
-    if (!/^[a-z0-9]+$/i.test(id || '')) return null;
+    if (!isSafeId(id)) return null;
     const meta = await readJson<FileMeta | null>(path.join(UPLOADS_DIR, `${id}.json`), null);
     if (!meta) return null;
     try {
-      return { meta, buffer: await fs.readFile(path.join(UPLOADS_DIR, id as string)) };
+      return { meta, buffer: await fs.readFile(path.join(UPLOADS_DIR, id)) };
     } catch (err) {
       if (errCode(err) === 'ENOENT') return null;
       throw err;
@@ -547,5 +585,5 @@ const files = {
 
 export {
   ensureDirs, collections, environments, flows, flowFolders, migrateFlowGroups,
-  baseUrls, files, revision, errCode, DATA_DIR,
+  baseUrls, files, revision, isSafeId, InvalidId, DATA_DIR,
 };

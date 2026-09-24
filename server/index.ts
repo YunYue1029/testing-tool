@@ -1,5 +1,5 @@
 import express from 'express';
-import type { ErrorRequestHandler, Request, Response } from 'express';
+import type { ErrorRequestHandler, NextFunction, Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import {
@@ -10,10 +10,10 @@ import { newId } from './ids.ts';
 import { convertPostmanCollection, convertPostmanEnvironment } from './postman.ts';
 import { SendError, runRequest, runShellRequest } from './runner.ts';
 import { runFlow } from './flow.ts';
+import { exportWorkspace, importWorkspace } from './workspace.ts';
 import { baseUrlVar, collectionUrlVar, folderWithDescendants } from './resolve.ts';
 import type {
-  Collection, CollectionInput, Environment, EnvironmentInput, Flow, FlowInput,
-  Folder, SavedRequest,
+  Collection, CollectionInput, EnvironmentInput, FlowInput, Folder, SavedRequest,
 } from './types.ts';
 
 const app = express();
@@ -23,6 +23,20 @@ const PORT = process.env.PORT || 7620;
 // boundary), so anyone who can reach this port can run code as this process.
 // HOST overrides the bind address; there is no good reason to widen it.
 const HOST = process.env.HOST || '127.0.0.1';
+
+// Every API answer says which revision of the data it reflects, so a caller
+// that just wrote can tell its own change from someone else's without a second
+// round trip to /api/rev. Read as the answer goes out — after the route's
+// write has counted — by wrapping send, which json and every status().json
+// go through.
+app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+  const send = res.send.bind(res);
+  res.send = (body?: unknown) => {
+    if (!res.headersSent) res.setHeader('X-Rev', `${revision.startedAt}:${revision.rev}`);
+    return send(body);
+  };
+  next();
+});
 
 // Postman exports carry saved example responses and run to tens of megabytes,
 // so the import route gets its own generous limit. It is mounted first because
@@ -49,15 +63,23 @@ const asyncH = (fn: AsyncHandler) => (req: Request, res: Response) => fn(req, re
       ...(err.hint ? { hint: err.hint } : {}),
     });
   }
+  // A store refusing what it was handed (an id that cannot name a file) says
+  // which status that is, the way express's own body errors do.
+  const status = (err as { status?: unknown }).status;
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    return res.status(status).json({ error: (err as Error).message });
+  }
   console.error(err);
   return res.status(500).json({ error: (err as Error).message });
 });
 
 // The caller's own abort signal: when the browser gives up (Cancel, reload,
-// closed tab) the upstream call should go with it.
-function callerGone(req: Request): AbortSignal {
+// closed tab) the upstream call should go with it. The response closing before
+// it was finished is how that shows up; the request's own 'aborted' event is
+// deprecated.
+function callerGone(res: Response): AbortSignal {
   const ac = new AbortController();
-  req.on('aborted', () => ac.abort());
+  res.on('close', () => { if (!res.writableFinished) ac.abort(); });
   return ac.signal;
 }
 
@@ -92,7 +114,7 @@ app.post('/api/run', asyncH(async (req, res) => {
       environmentId: environment || undefined,
       vars,
       timeout,
-      abortSignal: callerGone(req),
+      abortSignal: callerGone(res),
     }));
   }
 
@@ -103,7 +125,7 @@ app.post('/api/run', asyncH(async (req, res) => {
     vars,
     overrides,
     timeout,
-    abortSignal: callerGone(req),
+    abortSignal: callerGone(res),
   }));
 }));
 
@@ -128,7 +150,7 @@ app.post('/api/flows/:id/run', asyncH(async (req, res) => {
   const { environment } = req.body || {};
   return res.json(await runFlow(flow, {
     environmentId: environment || undefined,
-    abortSignal: callerGone(req),
+    abortSignal: callerGone(res),
   }));
 }));
 
@@ -150,7 +172,7 @@ app.post('/api/flows/:id/steps/:stepId/run', asyncH(async (req, res) => {
   // back at someone who just pressed run would be a joke at their expense.
   return res.json(await runFlow({ ...flow, steps: [{ ...step, enabled: true }] }, {
     environmentId: environment || undefined,
-    abortSignal: callerGone(req),
+    abortSignal: callerGone(res),
   }));
 }));
 
@@ -201,11 +223,22 @@ app.patch('/api/flow-folders/:fid', asyncH(async (req, res) => {
 // there any more.
 app.delete('/api/flow-folders/:fid', asyncH(async (req, res) => {
   const folders = await flowFolders.list();
+  // Asked before any flow goes: a folder that isn't there has nothing inside
+  // it to take with it, whatever a stray folderId says.
+  if (!folders.some((f) => f.id === req.params.fid)) return res.status(404).json({ error: 'Not found' });
   const doomed = folderWithDescendants(folders, req.params.fid);
   const inside = (await flows.list()).filter((f) => doomed.includes(f.folderId as string));
   for (const f of inside) await flows.remove(f.id);
-  const list = await flowFolders.update((cur) => cur.filter((f) => !doomed.includes(f.id)));
-  res.json({ folders: list, deletedFlows: inside.map((f) => f.id) });
+  let found = false;
+  const list = await flowFolders.update((cur) => {
+    // Checked again under the lock: the tree it has to be true of is the one
+    // being written.
+    if (!cur.some((f) => f.id === req.params.fid)) return null;
+    found = true;
+    return cur.filter((f) => !doomed.includes(f.id));
+  });
+  if (!found) return res.status(404).json({ error: 'Not found' });
+  return res.json({ folders: list, deletedFlows: inside.map((f) => f.id) });
 }));
 
 // ---- Saved base URLs (the base-URL pick-list) ----
@@ -401,220 +434,8 @@ app.post('/api/import/postman', asyncH(async (req, res) => {
 app.get('/api/rev', (req, res) => res.json(revision));
 
 // ---- Export / import everything (moving this workspace to another machine) ----
-// One file carries collections, environments, flows and the saved base URLs in
-// their stored shape — no conversion, so nothing is lost on the way out or in.
-const WORKSPACE_FORMAT = 'testing-tool/workspace';
-// What the tool wrote under its old name. Files already exported carry it, and
-// they are exactly the workspaces someone is moving between machines, so import
-// keeps accepting it — only export stops producing it.
-const LEGACY_WORKSPACE_FORMAT = 'api-test/workspace';
-
-// The sidebar's two halves, plus the context both of them resolve against.
-// Sections, not stores, because the things that have to travel together do:
-// a flow filed under a folder the other machine never got is filed nowhere,
-// and an environment without its base URLs resolves to the built-in default.
-const SECTIONS = ['tests', 'flows', 'environments'];
-
-class BadInclude extends Error {}
-
-// No `include` means everything — an older client, MCP, or a plain
-// `curl /api/export` all still get the whole workspace.
-function parseInclude(param: unknown): string[] {
-  if (param === undefined || param === '') return SECTIONS.slice();
-  const wanted = [...new Set(String(param).split(',').map((s) => s.trim()).filter(Boolean))];
-  const unknown = wanted.filter((s) => !SECTIONS.includes(s));
-  if (unknown.length) throw new BadInclude(`Unknown export section(s): ${unknown.join(', ')}`);
-  if (!wanted.length) throw new BadInclude('Nothing selected to transfer');
-  return wanted;
-}
-
-// What an export file carries. Every section is optional: `contents` says which
-// ones were actually asked for.
-interface WorkspaceFile {
-  format: string;
-  version: number;
-  exportedAt: string;
-  contents: string[];
-  collections?: Collection[];
-  flows?: Flow[];
-  flowFolders?: Folder[];
-  environments?: Environment[];
-  baseUrls?: string[];
-}
-
-app.get('/api/export', asyncH(async (req, res) => {
-  let include: string[];
-  try {
-    include = parseInclude(req.query.include);
-  } catch (err) {
-    if (!(err instanceof BadInclude)) throw err;
-    return res.status(400).json({ error: err.message, hint: `Sections: ${SECTIONS.join(', ')}` });
-  }
-
-  // What is in the file, stated rather than inferred: the import side shows it
-  // before anything is written, and an empty section reads as "exported, had
-  // none" instead of "not exported".
-  const out: WorkspaceFile = {
-    format: WORKSPACE_FORMAT,
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    contents: include,
-  };
-  if (include.includes('tests')) out.collections = await collections.list();
-  if (include.includes('flows')) {
-    out.flows = await flows.list();
-    // Without these the flows land on the other machine filed under folders
-    // that do not exist there.
-    out.flowFolders = await flowFolders.list();
-  }
-  if (include.includes('environments')) {
-    out.environments = await environments.list();
-    out.baseUrls = await baseUrls.list();
-  }
-  return res.json(out);
-}));
-
-// A store that can take a record back in, whatever kind it holds.
-interface Upsertable<T> {
-  save(item: T): Promise<{ id: string }>;
-}
-
-// Restoring is an upsert on the stored ids, not an append: importing the same
-// file twice updates what is already here instead of leaving two of everything,
-// which is what makes this usable as a sync rather than a one-shot restore. Ids
-// also keep a flow's steps pointing at the right requests.
-//
-// `include` narrows it further: only sections both asked for AND present in the
-// file are written, so a whole-workspace file can be imported for its flows
-// alone without its collections landing on top of the ones here.
-app.post('/api/import/workspace', asyncH(async (req, res) => {
-  const data = req.body || {};
-  if (data.format !== WORKSPACE_FORMAT && data.format !== LEGACY_WORKSPACE_FORMAT) {
-    return res.status(400).json({
-      error: 'Not a testing-tool export file',
-      hint: 'Export from the other machine with the export button, or use a Postman v2.x export instead.',
-    });
-  }
-  let include: string[];
-  try {
-    include = parseInclude(req.query.include);
-  } catch (err) {
-    if (!(err instanceof BadInclude)) throw err;
-    return res.status(400).json({ error: err.message, hint: `Sections: ${SECTIONS.join(', ')}` });
-  }
-  const wants = (section: string, list: unknown) =>
-    include.includes(section) && Array.isArray(list);
-
-  async function upsert<T extends { id?: string }>(
-    store: Upsertable<T>,
-    items: T[],
-    existingIds: Set<string>,
-  ): Promise<{ added: number; updated: number }> {
-    const counts = { added: 0, updated: 0 };
-    for (const item of Array.isArray(items) ? items : []) {
-      if (!item || typeof item !== 'object') continue;
-      if (item.id && existingIds.has(item.id)) counts.updated += 1;
-      else counts.added += 1;
-      await store.save(item);
-    }
-    return counts;
-  }
-
-  const idsOf = (list: Array<{ id: string }>) => new Set(list.map((x) => x.id));
-  const [colIds, envIds, flowIds, currentUrls] = await Promise.all([
-    collections.list().then(idsOf),
-    environments.list().then(idsOf),
-    flows.list().then(idsOf),
-    baseUrls.list(),
-  ]);
-
-  // A section left out is left alone: no key in the result either, so the
-  // caller reports what it actually did rather than "0 added, 0 updated" for
-  // something it never touched.
-  const result: Record<string, unknown> & { applied: string[] } = { applied: [] };
-  if (wants('tests', data.collections)) {
-    result.collections = await upsert<CollectionInput>(collections, data.collections, colIds);
-    result.applied.push('tests');
-  }
-  if (wants('environments', data.environments)) {
-    result.environments = await upsert<EnvironmentInput>(environments, data.environments, envIds);
-    result.applied.push('environments');
-  }
-  if (wants('flows', data.flows)) {
-    result.flows = await upsert<FlowInput>(flows, data.flows, flowIds);
-    result.applied.push('flows');
-  }
-
-  // Flow folders are one list, not a document each: upsert by id so a second
-  // import updates the tree instead of duplicating it, and folders this machine
-  // has that the file doesn't are left where they are.
-  const incomingFolders: Folder[] = (include.includes('flows') && Array.isArray(data.flowFolders)
-    ? data.flowFolders : [])
-    .filter((f: Folder | null) => f && typeof f === 'object' && f.id);
-  if (incomingFolders.length) {
-    result.flowFolders = await flowFolders.update((cur) => {
-      const next = cur.slice();
-      for (const f of incomingFolders) {
-        const folder: Folder = { id: f.id, name: f.name || 'Folder', parentId: f.parentId || null };
-        const idx = next.findIndex((x) => x.id === folder.id);
-        if (idx >= 0) next[idx] = folder;
-        else next.push(folder);
-      }
-      return next;
-    }).then((list) => list.length);
-  }
-
-  // Base URLs are a pick-list, so the two machines' lists are merged rather
-  // than one replacing the other. They travel with the environments: on their
-  // own they are a list of hosts nothing points at.
-  if (wants('environments', data.baseUrls)) {
-    const merged = [...currentUrls];
-    for (const u of data.baseUrls) {
-      if (typeof u === 'string' && u.trim() && !merged.includes(u.trim())) merged.push(u.trim());
-    }
-    await baseUrls.save(merged);
-    result.baseUrls = merged.length - currentUrls.length;
-  }
-
-  // Uploaded files live outside the JSON (they are bytes), so a form-data file
-  // field arrives pointing at an upload this machine does not have. Say how
-  // many, rather than letting it surface later as a failed send.
-  if (result.collections) {
-    let fileFields = 0;
-    for (const c of data.collections as Collection[]) {
-      for (const r of (c && c.requests) || []) {
-        const form = 'form' in r ? r.form : undefined;
-        for (const f of form || []) if (f && f.type === 'file' && f.fileId) fileFields += 1;
-      }
-    }
-    result.fileFields = fileFields;
-  }
-
-  // Flows imported without their tests: a step naming a saved request has
-  // nothing to run. Answer it from the store as it now stands rather than from
-  // the file, so a flows-only import onto a machine that already has those
-  // collections correctly reports nothing missing.
-  if (result.flows) {
-    const here = await collections.list();
-    const known = new Set<string>();
-    for (const c of here) for (const r of c.requests || []) known.add(`${c.id}/${r.id}`);
-    const danglingFlows = new Set<string>();
-    let danglingSteps = 0;
-    for (const f of data.flows as Flow[]) {
-      for (const s of (f && f.steps) || []) {
-        if (!s || !s.requestId || !s.collectionId) continue; // inline / shell steps carry their own
-        if (known.has(`${s.collectionId}/${s.requestId}`)) continue;
-        danglingSteps += 1;
-        danglingFlows.add(f.name || f.id);
-      }
-    }
-    if (danglingSteps) {
-      result.missingRequests = { steps: danglingSteps, flows: [...danglingFlows] };
-    }
-  }
-
-  return res.json(result);
-}));
+app.get('/api/export', asyncH(exportWorkspace));
+app.post('/api/import/workspace', asyncH(importWorkspace));
 
 // An unknown /api path stops here. Without this it falls through to the SPA
 // catch-all below and comes back as index.html with a 200, so the caller fails
