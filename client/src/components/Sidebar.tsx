@@ -710,10 +710,13 @@ export default function Sidebar({
                 {c.name}
               </span>
               {/* One pencil for the whole collection — name, base URL and auth
-                  live in the same modal, the way a flow step is edited. It stays
-                  lit when auth is set, so the row still shows that at a glance. */}
+                  live in the same modal, the way a flow step is edited. It
+                  appears on hover like the row's other tools, whatever the
+                  collection carries: lit on some rows and not others, it read
+                  as a difference between them rather than as a setting. Whether
+                  auth is set is in its title. */}
               <button
-                className={`mini ${authHeader(c.auth) ? 'on' : ''}`}
+                className="mini"
                 title={authHeader(c.auth)
                   ? 'Edit collection — name, base URL, auth (auth is set)'
                   : 'Edit collection — name, base URL, auth'}

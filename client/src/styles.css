@@ -208,8 +208,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .req-item:hover .mini,
 .req-item.active .mini,
 .mini:focus-visible { opacity: 1; }
-/* The pencil doubles as an indicator that the collection carries auth. */
-.collection-head .mini.on { opacity: 1; color: var(--green); }
 /* Header, env-bar and flow-step tools are not inside a hoverable list row, so
    they stay visible — dimmed, so the row still reads as its content first.
    A step's move, edit and remove buttons live here: they are the only way to do
