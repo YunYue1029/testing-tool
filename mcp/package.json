@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "MCP server exposing the testing-tool (collections, environments, send) to MCP clients",
+  "description": "MCP server exposing the testing-tool (collections, shell tests, flows, environments, send) to MCP clients",
   "main": "server.ts",
   "scripts": {
     "start": "node server.ts",

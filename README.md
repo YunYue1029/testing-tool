@@ -130,9 +130,12 @@ Override the storage location with the `DATA_DIR` environment variable
 
 ## MCP server
 
-`mcp/server.ts` exposes the collections / environments / send tools to MCP
-clients (Claude Code, IDEs). It is a thin client of the HTTP backend, so the
-backend must be running. It supports two transports:
+`mcp/server.ts` exposes the tool to MCP clients (Claude Code, IDEs): the
+collections of endpoints and shell tests, the flows that chain them into feature
+tests, environments, and sending. The tools live under `mcp/tools/`, one file per
+area, with the usage conventions every client receives in `mcp/instructions.ts`.
+It is a thin client of the HTTP backend, so the backend must be running. It
+supports two transports:
 
 - **Streamable HTTP** (set `MCP_HTTP_PORT`) — a long-lived service clients reach
   by URL. This is the recommended, always-on setup.
