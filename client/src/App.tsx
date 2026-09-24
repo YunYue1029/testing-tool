@@ -57,7 +57,6 @@ interface SaveTarget {
 export default function App() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
-  const [savedBaseUrls, setSavedBaseUrls] = useState<string[]>([]);
   const [activeEnvId, setActiveEnvId] = useState(
     () => localStorage.getItem('activeEnvId') || null
   );
@@ -104,14 +103,12 @@ export default function App() {
     // where the other order would record a revision we never actually loaded
     // and lose that change for good.
     const at = await api.getRev().catch(() => null);
-    const [cols, envs, urls, fls, flowDirs] = await Promise.all([
-      api.listCollections(), api.listEnvironments(), api.listBaseUrls(), api.listFlows(),
-      api.listFlowFolders(),
+    const [cols, envs, fls, flowDirs] = await Promise.all([
+      api.listCollections(), api.listEnvironments(), api.listFlows(), api.listFlowFolders(),
     ]);
     if (at) seenRev.current = `${at.startedAt}:${at.rev}`;
     setCollections(cols);
     setEnvironments(envs);
-    setSavedBaseUrls(urls);
     setFlows(fls);
     setFlowFolders(flowDirs);
     // Handed back for the poll below, which has to inspect what just arrived —
@@ -781,13 +778,6 @@ export default function App() {
     await refresh();
   }
 
-  // The open collection's base_url, edited from the env bar.
-  async function saveCollectionBaseUrl(baseUrl: string) {
-    if (!collectionId) return;
-    const saved = await api.patchCollection(collectionId, { baseUrl });
-    setCollections((cols) => cols.map((c) => (c.id === saved.id ? saved : c)));
-  }
-
   // Written as the dialog is edited, so it stays open afterwards: closing it is
   // the Close button's job, not a save's.
   async function saveCollectionSettings(fields: Partial<Collection>) {
@@ -820,6 +810,27 @@ export default function App() {
   return (
     <div className="app">
       <Sidebar
+        envBar={(
+          <EnvironmentBar
+            environments={environments}
+            activeEnvId={activeEnvId}
+            onSelect={setActiveEnvId}
+            collections={collections}
+            onSaveEnv={async (e: Partial<Environment>) => {
+              const saved = await api.saveEnvironment(e);
+              await refresh();
+              if (!e.id) setActiveEnvId(saved.id); // select a freshly created env
+              // Handed back so the editor knows which environment it is now
+              // writing to, rather than creating another on the next keystroke.
+              return saved;
+            }}
+            onDeleteEnv={async (id: string) => {
+              await api.deleteEnvironment(id);
+              if (activeEnvId === id) setActiveEnvId(null);
+              await refresh();
+            }}
+          />
+        )}
         collections={collections}
         activeRequestId={request.id}
         onNewRequest={() => newReq()}
@@ -851,30 +862,6 @@ export default function App() {
       />
 
       <main className="main">
-        <EnvironmentBar
-          environments={environments}
-          activeEnvId={activeEnvId}
-          onSelect={setActiveEnvId}
-          collections={collections}
-          collection={collections.find((c) => c.id === collectionId) || null}
-          envBaseUrl={activeVars().base_url}
-          onSaveBaseUrl={saveCollectionBaseUrl}
-          savedBaseUrls={savedBaseUrls}
-          onSaveBaseUrls={async (list: string[]) => setSavedBaseUrls(await api.saveBaseUrls(list))}
-          onSaveEnv={async (e: Partial<Environment>) => {
-            const saved = await api.saveEnvironment(e);
-            await refresh();
-            if (!e.id) setActiveEnvId(saved.id); // select a freshly created env
-            // Handed back so the editor knows which environment it is now
-            // writing to, rather than creating another on the next keystroke.
-            return saved;
-          }}
-          onDeleteEnv={async (id: string) => {
-            await api.deleteEnvironment(id);
-            if (activeEnvId === id) setActiveEnvId(null);
-            await refresh();
-          }}
-        />
         {flow ? (
           <FlowPanel
             environments={environments}

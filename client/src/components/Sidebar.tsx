@@ -9,6 +9,9 @@ import {
 import type { Collection, Flow, Folder, SavedRequest, SearchHit } from '../types.ts';
 
 interface SidebarProps {
+  // The environment picker, shown under the title: the one thing that
+  // changes what every request and flow below it does.
+  envBar: React.ReactNode;
   collections: Collection[];
   activeRequestId: string | null;
   onNewRequest: () => void;
@@ -81,7 +84,7 @@ function Marked({ text, query }: { text: string; query: string }) {
 }
 
 export default function Sidebar({
-  collections, activeRequestId,
+  envBar, collections, activeRequestId,
   onNewRequest, onNewShellTest, onNewShellTestIn, onOpenRequest,
   onNewCollection, onOpenCollectionSettings, onDeleteCollection, onDeleteRequest,
   onRenameRequest, onMoveRequest, onNewRequestIn, onNewFolder, onRenameFolder, onDeleteFolder,
@@ -96,6 +99,28 @@ export default function Sidebar({
       return (JSON.parse(localStorage.getItem('collapsedCols') || 'null') || {}) as Record<string, boolean>;
     } catch { return {} as Record<string, boolean>; }
   });
+
+  // ---- Which tree ----
+  // One at a time. With the tests above the flows, the flows began wherever
+  // the last open collection ended — usually off the bottom of the screen.
+  const [page, setPage] = useState<'tests' | 'flows'>(
+    () => (localStorage.getItem('sidePage') === 'flows' ? 'flows' : 'tests')
+  );
+  function showPage(next: 'tests' | 'flows') {
+    setPage(next);
+    localStorage.setItem('sidePage', next);
+  }
+  // The page follows what the main area opens — a flow from a search hit, a
+  // request from a flow's step — so the tree shows where that came from. Not
+  // on mount, which would put you back on the tests page every time.
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (mounted.current && activeFlowId) showPage('flows');
+  }, [activeFlowId]);
+  useEffect(() => {
+    if (!mounted.current) { mounted.current = true; return; }
+    if (!activeFlowId) showPage('tests');
+  }, [activeRequestId]);
 
   // ---- Search ----
   // While a query is typed the tree is replaced by a flat, ranked list: the
@@ -157,10 +182,6 @@ export default function Sidebar({
 
   // Collapsed by default: only an explicit `false` counts as expanded.
   const isCollapsed = (id: string) => collapsed[id] !== false;
-  // The two section headers are the opposite way round: a collection or folder
-  // starts closed so a big tree stays scannable, but a section that starts
-  // closed just hides the whole sidebar until you find the caret.
-  const isSectionCollapsed = (id: string) => collapsed[id] === true;
 
   function persistCollapsed(next: Record<string, boolean>) {
     setCollapsed(next);
@@ -602,6 +623,46 @@ export default function Sidebar({
           }}
         />
       </div>
+      {envBar}
+
+      <div className="side-tabs">
+        <button className={`tab ${page === 'tests' ? 'active' : ''}`} onClick={() => showPage('tests')}>
+          Tests
+        </button>
+        {/* Also the root of the flow tree: dropping a flow or a folder here
+            takes it back out of whatever folder it was in. */}
+        <button
+          className={`tab ${page === 'flows' ? 'active' : ''} ${dropInto === null ? 'drop-into' : ''}`}
+          title="Flows — drop a flow or folder here to move it to the top level"
+          onClick={() => showPage('flows')}
+          {...flowDropProps(null)}
+        >
+          Flows
+        </button>
+        {/* Plus makes the thing itself, the icon beside it makes the container.
+            A plain request belongs to no collection and is not saved anywhere
+            yet, so it shows up in the panel rather than in the tree. */}
+        {page === 'tests' ? (
+          <span className="side-acts">
+            <button
+              className="mini bar-act add"
+              title="New request — a blank one, not filed in any collection"
+              onClick={() => onNewRequest()}
+            ><IconPlus /></button>
+            <button
+              className="mini bar-act"
+              title="New shell test — a command instead of a request, filed nowhere yet"
+              onClick={() => onNewShellTest()}
+            ><IconTerminal /></button>
+            <button className="mini bar-act" title="New collection" onClick={() => onNewCollection()}><IconCollection /></button>
+          </span>
+        ) : (
+          <span className="side-acts">
+            <button className="mini bar-act add" title="New flow" onClick={() => onNewFlow()}><IconPlus /></button>
+            <button className="mini bar-act" title="New flow folder" onClick={() => onNewFlowFolder(null)}><IconFolder /></button>
+          </span>
+        )}
+      </div>
 
       {/* Outside the scroller: the box has to stay put while its results move. */}
       <div className="side-search">
@@ -664,41 +725,16 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* Two halves: the tests you send one at a time, and the flows that
-            chain them. Each half is one collapsible section. */}
-        {!searching && (
+        {!searching && page === 'tests' && (
         <div className="collection">
-          <div className="collection-head" onClick={() => setCollapsedFor('__apis', !isSectionCollapsed('__apis'))}>
-            <span className={`caret ${isSectionCollapsed('__apis') ? '' : 'open'}`}>▸</span>
-            <span className="collection-name">Tests</span>
-            {/* Same pair as the Flows header: plus makes the thing itself, the
-                icon beside it makes the container. A plain request belongs to
-                no collection and is not saved anywhere yet, so it shows up in
-                the panel rather than in the tree. */}
-            <button
-              className="mini add"
-              title="New request — a blank one, not filed in any collection"
-              onClick={(e) => { e.stopPropagation(); onNewRequest(); }}
-            ><IconPlus /></button>
-            <button
-              className="mini"
-              title="New shell test — a command instead of a request, filed nowhere yet"
-              onClick={(e) => { e.stopPropagation(); onNewShellTest(); }}
-            ><IconTerminal /></button>
-            <button
-              className="mini"
-              title="New collection"
-              onClick={(e) => { e.stopPropagation(); setCollapsedFor('__apis', false); onNewCollection(); }}
-            ><IconCollection /></button>
-          </div>
-          {!isSectionCollapsed('__apis') && collections.length === 0 && <p className="hint">No collections yet.</p>}
-          {!isSectionCollapsed('__apis') && collections.map((c) => (
+          {collections.length === 0 && <p className="hint">No collections yet.</p>}
+          {collections.map((c) => (
           <div className="collection" key={c.id}>
             {/* The collection head is its own root: dropping a request here
                 takes it out of whatever folder it was in. */}
             <div
               className={`collection-head ${dropInto === c.id ? 'drop-into' : ''}`}
-              style={{ paddingLeft: 12 + 14 }}
+              style={{ paddingLeft: 12 }}
               onClick={() => setCollapsedFor(c.id, !isCollapsed(c.id))}
               {...reqDropProps(c.id, null)}
             >
@@ -743,42 +779,15 @@ export default function Sidebar({
                 onClick={(e) => { e.stopPropagation(); onDeleteCollection(c); }}
               ><IconClose /></button>
             </div>
-            {!isCollapsed(c.id) && renderChildren(c, null, 2)}
+            {!isCollapsed(c.id) && renderChildren(c, null, 1)}
           </div>
           ))}
         </div>
         )}
 
-        {/* Flows chain saved requests (and shell steps) together, so they sit
-            below the tests they draw their steps from. */}
-        {!searching && (
-        <div className="collection flows-section">
-          {/* The header doubles as the root of the flow tree: dropping a flow
-              or a folder here takes it back out of whatever folder it was in. */}
-          <div
-            className={`collection-head ${dropInto === null ? 'drop-into' : ''}`}
-            onClick={() => setCollapsedFor('__flows', !isSectionCollapsed('__flows'))}
-            {...flowDropProps(null)}
-          >
-            <span className={`caret ${isSectionCollapsed('__flows') ? '' : 'open'}`}>▸</span>
-            <span
-              className="collection-name"
-              title="Click to collapse/expand — or drop a flow or folder here to move it to the top level"
-            >
-              Flows
-            </span>
-            <button
-              className="mini add"
-              title="New flow"
-              onClick={(e) => { e.stopPropagation(); setCollapsedFor('__flows', false); onNewFlow(); }}
-            ><IconPlus /></button>
-            <button
-              className="mini"
-              title="New flow folder"
-              onClick={(e) => { e.stopPropagation(); setCollapsedFor('__flows', false); onNewFlowFolder(null); }}
-            ><IconFolder /></button>
-          </div>
-          {!isSectionCollapsed('__flows') && renderFlowChildren(null, 1)}
+        {!searching && page === 'flows' && (
+        <div className="collection">
+          {renderFlowChildren(null, 0)}
         </div>
         )}
       </div>

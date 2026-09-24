@@ -72,12 +72,28 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   background: linear-gradient(140deg, var(--accent), var(--green));
 }
 .brand-name { flex: 1; }
-.side-tabs { display: flex; border-bottom: 1px solid var(--border); }
-.side-tabs button {
-  flex: 1; border: none; border-radius: 0; background: transparent;
-  color: var(--muted); padding: 10px;
+/* Under the sidebar's title, sharing its side padding. */
+.env-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-bottom: 1px solid var(--border);
 }
-.side-tabs button.active { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.env-label { color: var(--muted); white-space: nowrap; }
+.env-bar select { flex: 1; min-width: 0; }
+/* Tests or Flows: one tree at a time, with that tree's "new" buttons at the
+   end of the row. */
+.side-tabs { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
+.side-tabs .tab {
+  flex: 1; border: none; border-radius: 0; background: transparent;
+  color: var(--muted); padding: 10px; font-weight: 600;
+}
+.side-tabs .tab:hover { color: var(--text); }
+.side-tabs .tab.active { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.side-tabs .tab.drop-into {
+  background: rgba(124, 108, 255, .16); box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--text);
+}
+.side-acts { display: flex; align-items: center; gap: 2px; padding: 0 8px 0 4px; }
+.side-acts .bar-act { width: 22px; height: 22px; }
 .side-scroll { flex: 1; overflow-y: auto; padding: 8px; }
 
 /* ---- Search ---- */
@@ -240,7 +256,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .tag-SH { color: #4bb8c4; }
 
 .tag-FLOW { color: var(--accent); }
-.flows-section { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
 
 /* ---- Flows ---- */
 /* The head and the run summary hold still; only the steps under them move. */

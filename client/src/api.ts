@@ -118,9 +118,6 @@ export const api = {
   deleteFlowFolder: (id: string) =>
     j<{ folders: Folder[]; deletedFlows: string[] }>('DELETE', `/api/flow-folders/${id}`),
 
-  listBaseUrls: () => j<string[]>('GET', '/api/base-urls'),
-  saveBaseUrls: (list: string[]) => j<string[]>('PUT', '/api/base-urls', list),
-
   // Cheap "has anything changed?" — a counter held in the server's memory, so
   // a tab can ask every few seconds without touching the disk.
   getRev: () => j<{ startedAt: number; rev: number }>('GET', '/api/rev'),
