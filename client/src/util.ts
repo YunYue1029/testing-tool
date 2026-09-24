@@ -24,12 +24,61 @@ export {
 
 // Indent a JSON body. Content-type decides, with a look at the first character
 // for the servers that answer JSON as text/plain.
-export function prettify(body: string, headers?: Record<string, string>): string {
-  const ct = (headers && (headers['content-type'] || headers['Content-Type'])) || '';
-  if (ct.includes('json') || (body && /^[\s\r\n]*[[{]/.test(body))) {
-    try { return JSON.stringify(JSON.parse(body), null, 2); } catch { /* not JSON after all */ }
+// Lays JSON out two spaces per level, and null when the text is not JSON.
+// The text is re-indented rather than parsed and printed: JSON.parse rounds an
+// id past 2^53, and a body shown with the wrong digits is worse than one shown
+// on one line.
+export function formatJson(text: string): string | null {
+  const src = text.trim();
+  if (!/^[[{]/.test(src)) return null;
+  try { JSON.parse(src); } catch { return null; }
+  const indent = (depth: number) => `\n${'  '.repeat(depth)}`;
+  let out = '';
+  let depth = 0;
+  let inString = false;
+  for (let i = 0; i < src.length; i += 1) {
+    const c = src[i]!;
+    if (inString) {
+      out += c;
+      if (c === '\\') { i += 1; out += src[i]; } else if (c === '"') inString = false;
+      continue;
+    }
+    switch (c) {
+      case '"': inString = true; out += c; break;
+      case '{': case '[': {
+        // An empty container stays on its line.
+        const close = c === '{' ? '}' : ']';
+        let j = i + 1;
+        while (j < src.length && /\s/.test(src[j]!)) j += 1;
+        if (src[j] === close) { out += c + close; i = j; break; }
+        depth += 1;
+        out += c + indent(depth);
+        break;
+      }
+      case '}': case ']': depth -= 1; out += indent(depth) + c; break;
+      case ',': out += `,${indent(depth)}`; break;
+      case ':': out += ': '; break;
+      default: if (!/\s/.test(c)) out += c;
+    }
   }
-  return body;
+  return out;
+}
+
+export const isJsonText = (text: string): boolean => formatJson(text) !== null;
+
+// The body laid out to read, when it is JSON, or has JSON in it: a log line
+// before the payload, a newline after it, a curl that printed the response and
+// then its timing. What is around the JSON stays where it was.
+export function prettify(body: string): string {
+  if (!body) return body;
+  const whole = formatJson(body);
+  if (whole != null) return whole;
+  const start = body.search(/[[{]/);
+  const end = Math.max(body.lastIndexOf('}'), body.lastIndexOf(']'));
+  if (start < 0 || end <= start) return body;
+  const inner = formatJson(body.slice(start, end + 1));
+  if (inner == null) return body;
+  return body.slice(0, start) + inner + body.slice(end + 1);
 }
 
 export function fmtSize(n: number | null | undefined): string {

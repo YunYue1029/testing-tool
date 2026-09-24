@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { prettify, fmtSize } from '../util';
+import CodeView from './CodeView';
+import { prettify, isJsonText, fmtSize } from '../util';
 import type { ScriptReport } from '../../../server/types.ts';
 import type { RunResponse, ShellResponse } from '../types.ts';
 
@@ -47,6 +48,11 @@ function ShellResult(
   { response: ShellResponse; scriptResult: ScriptReport | null | undefined; clear: React.ReactNode },
 ) {
   const { exitCode, stdout, stderr } = response;
+  // A command that printed JSON — a curl, mostly — gets it laid out like a
+  // response body would be, with the raw stream a click away.
+  const [raw, setRaw] = useState(false);
+  const pretty = useMemo(() => prettify(stdout || ''), [stdout]);
+  const shown = raw ? stdout : pretty;
   return (
     <div className="response-panel">
       <div className="response-meta">
@@ -61,14 +67,19 @@ function ShellResult(
       <div className="tab-body shell-output">
         {stdout ? (
           <>
-            <div className="field-label">stdout</div>
-            <pre className="response-body">{stdout}</pre>
+            <div className="field-label stream-label">
+              stdout
+              {pretty !== stdout && (
+                <button className="mini-text" onClick={() => setRaw(!raw)}>{raw ? 'Pretty' : 'Raw'}</button>
+              )}
+            </div>
+            <CodeView className="resp-code" value={shown} json={isJsonText(shown)} />
           </>
         ) : <p className="hint">No output on stdout.</p>}
         {stderr && (
           <>
             <div className="field-label">stderr</div>
-            <pre className="response-body shell-stderr">{stderr}</pre>
+            <CodeView className="resp-code shell-stderr" value={stderr} />
           </>
         )}
       </div>
@@ -103,9 +114,11 @@ export default function ResponsePanel({
   const http = response && response.kind !== 'shell' ? response : null;
   const isBinary = !!http && http.bodyEncoding === 'base64';
   const pretty = useMemo(
-    () => (http && !isBinary ? prettify(http.body, http.headers) : ''),
+    () => (http && !isBinary ? prettify(http.body) : ''),
     [response, isBinary]
   );
+  // Pretty or raw, JSON is JSON: the colouring and the folds apply to both.
+  const jsonBody = useMemo(() => isJsonText(pretty), [pretty]);
 
   const clear = onClear && (
     <button className="mini-text resp-clear" title="Clear the response" onClick={onClear}>Clear</button>
@@ -200,7 +213,7 @@ export default function ResponsePanel({
             <button className="btn-secondary" onClick={download}>Download</button>
           </div>
         ) : (
-          <pre className="response-body">{shown}</pre>
+          <CodeView className="resp-code" value={shown} json={jsonBody} />
         ))}
         {tab === 'headers' && (
           <table className="headers-view">

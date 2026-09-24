@@ -109,10 +109,10 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal, c
           // pair that ran is the pair being reported on.
           const req = s.request;
           const reqBody = req?.body
-            ? maskJsonBody(prettify(req.body, req.headers), reveal) : '';
+            ? maskJsonBody(prettify(req.body), reveal) : '';
           const res = s.response;
           const resBody = res && res.bodyEncoding !== 'base64' && res.body
-            ? maskJsonBody(prettify(res.body, res.headers), reveal) : '';
+            ? maskJsonBody(prettify(res.body), reveal) : '';
           return (
             <li key={s.id || i} className={`pr-step ${cls}`}>
               <div className="pr-step-head">

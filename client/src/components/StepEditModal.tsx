@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { RequestOptions } from './AddStepModal';
 import RequestAuthEditor from './RequestAuthEditor';
+import CodeEditor from './CodeEditor';
 import {
   emptyInlineRequest, METHODS, fitToContent, isShellTest, copyableBody, withBodyOverride,
 } from '../util';
@@ -374,11 +375,12 @@ export default function StepEditModal(
               </span>
             </div>
             {(req.bodyType || 'none') !== 'none' && (
-              <textarea
-                className="body-text step-body-text"
+              <CodeEditor
+                className="step-body-code"
+                lang={req.bodyType === 'json' ? 'json' : 'text'}
                 value={req.body || ''}
                 placeholder={req.bodyType === 'json' ? '{\n  "key": "value"\n}' : 'Request body'}
-                onChange={(e) => setInline({ body: e.target.value })}
+                onChange={(body) => setInline({ body })}
               />
             )}
           </>
@@ -471,11 +473,12 @@ export default function StepEditModal(
           Script — for checks the rows above can&apos;t express. <code>expect(cond, message)</code>,
           plus <code>res</code> and <code>env</code> (run-scoped here).
         </div>
-        <textarea
-          className="body-text step-script"
+        <CodeEditor
+          className="step-body-code"
+          lang="javascript"
           value={step.script || ''}
           placeholder={"expect(res.json().data.items.length > 0, 'list is not empty')"}
-          onChange={(e) => set({ script: e.target.value })}
+          onChange={(script) => set({ script })}
         />
 
         <div className="modal-actions">

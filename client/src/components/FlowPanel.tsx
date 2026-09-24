@@ -1,13 +1,14 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { IconPlus, IconClose, IconPencil, IconPlay } from './Icons';
+import CodeView from './CodeView';
 import AddStepModal from './AddStepModal';
 import StepEditModal from './StepEditModal';
 import FlowReportModal from './FlowReportModal';
 import FlowReportDoc from './FlowReportDoc';
 import FlowSettingsModal from './FlowSettingsModal';
 import {
-  newId, prettify, fmtSize, emptyInlineRequest, flowUsedVarNames,
+  newId, prettify, isJsonText, fmtSize, emptyInlineRequest, flowUsedVarNames,
   applyCollectionBaseUrl, buildUrl, composeUrl, requestVars, substitute,
 } from '../util';
 import type {
@@ -99,7 +100,7 @@ function StepSent({ rep }: { rep: StepReport }) {
   }
 
   if (!req) return null;
-  const body = prettify(req.body || '', req.headers);
+  const body = prettify(req.body || '');
   const count = Object.keys(req.headers || {}).length;
   return (
     <div className="step-sent">
@@ -126,7 +127,7 @@ function StepSent({ rep }: { rep: StepReport }) {
           </tbody>
         </table>
       )}
-      {body && <pre className="step-body step-sent-body">{body}</pre>}
+      {body && <CodeView className="step-code" value={body} json={isJsonText(body)} />}
       {req.bodyTruncated && <p className="hint">Sent body truncated for the report.</p>}
       {req.form && (
         <table className="headers-view">
@@ -149,6 +150,7 @@ function StepSent({ rep }: { rep: StepReport }) {
 // first thing anyone reading a red step wants.
 function StepShellOutput({ rep }: { rep: StepReport }) {
   const { stdout, stderr, truncated } = rep.shell!;
+  const pretty = prettify(stdout || '');
   return (
     <div className="step-response">
       <StepSent rep={rep} />
@@ -161,13 +163,13 @@ function StepShellOutput({ rep }: { rep: StepReport }) {
       {stdout ? (
         <>
           <div className="field-label">stdout</div>
-          <pre className="step-body step-resp-body">{stdout}</pre>
+          <CodeView className="step-code" value={pretty} json={isJsonText(pretty)} />
         </>
       ) : <p className="hint">No output on stdout.</p>}
       {stderr && (
         <>
           <div className="field-label">stderr</div>
-          <pre className="step-body step-resp-body step-stderr">{stderr}</pre>
+          <CodeView className="step-code shell-stderr" value={stderr} />
         </>
       )}
       {truncated && <p className="hint">Output truncated for the report.</p>}
@@ -188,7 +190,7 @@ function StepResponse({ rep }: { rep: StepReport }) {
   const [raw, setRaw] = useState(false);
   const [copied, setCopied] = useState(false);
   const res = rep.response!;
-  const pretty = useMemo(() => prettify(res.body, res.headers), [res]);
+  const pretty = useMemo(() => prettify(res.body), [res]);
   const binary = res.bodyEncoding === 'base64';
   const shown = raw ? res.body : pretty;
 
@@ -258,7 +260,9 @@ function StepResponse({ rep }: { rep: StepReport }) {
           </p>
         ) : (
           <>
-            <pre className="step-body step-resp-body">{shown || '(empty body)'}</pre>
+            {shown
+              ? <CodeView className="step-code" value={shown} json={isJsonText(pretty)} />
+              : <p className="hint">(empty body)</p>}
             {res.truncated && <p className="hint">Body truncated for the report.</p>}
           </>
         ))}

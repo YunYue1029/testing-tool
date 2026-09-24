@@ -517,18 +517,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .inline-body-type {
   display: inline-flex; gap: 12px; margin: 0 0 0 12px; vertical-align: middle;
 }
-.step-body-text { min-height: 70px; }
 .flow-step-flags {
   display: flex; gap: 16px; margin-top: 8px; color: var(--muted); font-size: 12px;
 }
 .flow-step-flags label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
 .step-extracted { margin-top: 6px; color: var(--muted); font-size: 12px; }
-.step-body {
-  margin: 6px 0 0; padding: 8px; max-height: 160px; overflow: auto;
-  background: var(--bg); border-radius: 4px; color: var(--muted);
-  font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 11.5px;
-  white-space: pre-wrap; word-break: break-word;
-}
 .step-response { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
 .step-response-meta {
   display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px;
@@ -558,7 +551,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 }
 /* Shorter than the response body it sits above: what was sent is usually a few
    fields, and it should not be the thing filling the panel. */
-.step-sent-body { max-height: 200px; font-size: 12px; }
 .step-sent .headers-view { margin-top: 6px; }
 /* Its own frame already comes from .step-sent. */
 .step-sent .step-shell-cmd { margin-bottom: 0; }
@@ -567,30 +559,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .step-checks .err { color: var(--red); }
 .step-response .tabs { margin-top: 8px; }
 .step-response .tab-body { padding-top: 8px; }
-.step-resp-body { max-height: 320px; color: var(--text); font-size: 12px; }
-/* After .step-resp-body, which sets the body colour and would otherwise win on
-   source order — a shell step's output pre carries both classes. */
-.step-stderr { color: var(--red); }
-
-.step-script { min-height: 70px; }
 
 /* ---- Main ---- */
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-
-.env-bar {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--bg-2);
-}
-.env-label { color: var(--muted); white-space: nowrap; }
-.env-bar select { min-width: 180px; }
-.base-label { margin-left: 8px; padding-left: 14px; border-left: 1px solid var(--border); }
-.base-select {
-  flex: 1; min-width: 160px; max-width: 460px;
-  font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12px;
-}
-/* Disabled = no collection open; the "Inherit:" entry still shows what
-   {{base_url}} resolves to, so the bar always says where requests go. */
-.base-select:disabled { opacity: .6; cursor: not-allowed; }
 
 .request-panel { padding: 14px; border-bottom: 1px solid var(--border); }
 .crumb { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
@@ -621,8 +592,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
    pane scrolls once they outgrow it. */
 .shell-output { overflow: auto; }
 .shell-output .field-label { margin-top: 6px; }
-.shell-output .response-body { flex: 0 1 auto; max-height: 60vh; }
-.shell-output .shell-stderr { color: var(--red); }
+.stream-label { display: flex; align-items: center; gap: 8px; }
 
 /* Auth: presence only, never the token value. */
 .auth-dot {
@@ -737,7 +707,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   font-size: 13px;
   white-space: pre;
 }
-.var-mirror.body-text { white-space: pre-wrap; word-break: break-word; min-height: 0; }
 .var-tok { border-radius: 4px; }
 .var-tok.hit { background: rgba(124, 108, 255, .30); box-shadow: 0 0 0 1px rgba(124, 108, 255, .45); }
 .var-tok.miss { background: rgba(224, 87, 78, .25); box-shadow: 0 0 0 1px rgba(224, 87, 78, .40); }
@@ -796,6 +765,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   border-style: dashed;
 }
 .body-variants .variant-add:hover { color: var(--text); }
+.body-variants .format-btn { margin-left: auto; }
 .body-text {
   width: 100%; min-height: 160px; resize: vertical;
   font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px;
@@ -830,12 +800,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .status.warn { color: var(--yellow); }
 .status.err { color: var(--red); }
 .meta-item { color: var(--muted); font-size: 12px; }
-.response-body {
-  flex: 1; overflow: auto; margin: 0; padding: 12px;
-  background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
-  font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px;
-  white-space: pre-wrap; word-break: break-word;
-}
 .headers-view { width: 100%; border-collapse: collapse; overflow: auto; display: block; }
 .headers-view td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .hk { color: var(--accent); white-space: nowrap; font-family: monospace; }
@@ -1007,3 +971,25 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .print-report .pr-vars td { font-family: 'SF Mono', Menlo, Consolas, monospace; }
 
 .print-report .pr-foot { margin-top: 16pt; padding-top: 6pt; border-top: .5pt solid #bbb; font-size: 9pt; color: #555; }
+
+/* ---- Code (CodeMirror) ---- */
+/* A body or a script, read or written. The box is ours; what is inside it is
+   the editor's, themed in code/theme.ts from the same variables. */
+.code-view, .code-editor {
+  display: flex; flex-direction: column; min-height: 0;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg-2);
+  overflow: hidden;
+}
+.code-view > .cm-editor, .code-editor > .cm-editor { flex: 1; min-height: 0; }
+.code-editor:focus-within { border-color: var(--accent); }
+/* A response body fills what the panel has left; a command's streams take
+   what they need, up to most of the screen. */
+.resp-code { flex: 1; }
+.shell-output .resp-code { flex: 0 1 auto; max-height: 60vh; }
+.shell-stderr > .cm-editor .cm-content { color: var(--red); }
+/* A step's bodies in a run report: a dozen lines, then they scroll. */
+.step-code { margin-top: 6px; }
+.step-code > .cm-editor { max-height: 200px; font-size: 12px; }
+/* Editors grow with what is typed, from a few lines to most of the screen. */
+.body-code > .cm-editor, .script-code > .cm-editor { min-height: 160px; max-height: 60vh; }
+.step-body-code > .cm-editor { min-height: 70px; max-height: 40vh; }

@@ -2,22 +2,21 @@ import React, { useRef, useState } from 'react';
 import { VAR_RE } from '../util';
 import type { Vars } from '../types.ts';
 
-// Input/textarea with {{var}} highlighting. The field itself keeps a
-// transparent background; a mirror div behind it renders the same text
-// (invisibly) and paints a pill background under each token — purple when the
-// variable exists in the active environment, red when it doesn't. Hovering a
-// token shows its resolved value. The mirror must copy the field's font and
-// padding exactly, which is why `fieldClass` is applied to both.
-type NativeFieldProps =
-  React.InputHTMLAttributes<HTMLInputElement> & React.TextareaHTMLAttributes<HTMLTextAreaElement>;
+// Input with {{var}} highlighting. The field itself keeps a transparent
+// background; a mirror div behind it renders the same text (invisibly) and
+// paints a pill background under each token — purple when the variable exists
+// in the active environment, red when it doesn't. Hovering a token shows its
+// resolved value. The mirror must copy the field's font and padding exactly,
+// which is why `fieldClass` is applied to both. A body, being many lines, is
+// a CodeEditor instead, which paints the same pills its own way.
+type NativeFieldProps = React.InputHTMLAttributes<HTMLInputElement>;
 
 interface VarFieldProps extends Omit<NativeFieldProps, 'value' | 'onChange' | 'className'> {
   value: string;
   vars?: Vars;
-  multiline?: boolean;
   fieldClass?: string;
   className?: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement & HTMLTextAreaElement>) => void;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 // What the tooltip is showing, and where.
@@ -30,10 +29,10 @@ interface VarTip {
 }
 
 export default function VarField({
-  value, vars = {}, multiline = false, fieldClass = '', className = '', onChange, ...rest
+  value, vars = {}, fieldClass = '', className = '', onChange, ...rest
 }: VarFieldProps) {
   const mirrorRef = useRef<HTMLDivElement>(null);
-  const fieldRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
+  const fieldRef = useRef<HTMLInputElement>(null);
   const [tip, setTip] = useState<VarTip | null>(null);
 
   const text = value || '';
@@ -72,10 +71,6 @@ export default function VarField({
     setTip(null);
   }
 
-  // One of two intrinsic elements, chosen at run time; React cannot check the
-  // props of a tag it only learns here, so the spread below goes through as-is.
-  const Field = (multiline ? 'textarea' : 'input') as React.ElementType;
-
   return (
     <div className={`var-field ${className}`}>
       <div className={`var-mirror ${fieldClass}`} ref={mirrorRef} aria-hidden="true">
@@ -90,16 +85,12 @@ export default function VarField({
             </span>
           )
           : p.text))}
-        {/* keep a trailing empty line from collapsing */}
-        {multiline ? '​' : ''}
       </div>
-      <Field
+      <input
         ref={fieldRef}
         className={fieldClass}
         value={value}
-        onChange={(e: React.ChangeEvent<HTMLInputElement & HTMLTextAreaElement>) => {
-          onChange(e); requestAnimationFrame(syncScroll);
-        }}
+        onChange={(e) => { onChange(e); requestAnimationFrame(syncScroll); }}
         onScroll={syncScroll}
         onKeyUp={syncScroll}
         onClick={syncScroll}

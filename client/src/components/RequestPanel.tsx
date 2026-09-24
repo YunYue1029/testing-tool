@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import KeyValueEditor from './KeyValueEditor';
 import FormDataEditor from './FormDataEditor';
 import VarField from './VarField';
+import CodeEditor from './CodeEditor';
 import RequestVarsEditor from './RequestVarsEditor';
 import RequestAuthEditor from './RequestAuthEditor';
 import HelpTip from './HelpTip';
-import { METHODS, emptyBody, activeBody, requestVars, usedVarNames } from '../util';
+import {
+  METHODS, VAR_RE, emptyBody, activeBody, requestVars, usedVarNames, formatJson,
+} from '../util';
 import type {
   AuthDescription, BodyType, Environment, FileMeta, HttpRequest, RequestBody,
   Vars,
@@ -60,6 +63,24 @@ export default function RequestPanel({
     set({
       bodies: (request.bodies || []).map((b) => (b.id === body?.id ? { ...b, content } : b)),
     });
+  }
+
+  // Lays the JSON body out, {{var}} tokens included. An unquoted token is not
+  // JSON, so each stands aside for a number — valid bare and inside a string —
+  // while the formatter works, and steps back in afterwards.
+  function formatBody() {
+    const src = body?.content || '';
+    const tokens: string[] = [];
+    const masked = src.replace(VAR_RE, (m) => {
+      tokens.push(m);
+      return `9000000000000${String(tokens.length - 1).padStart(3, '0')}`;
+    });
+    const out = formatJson(masked);
+    if (out == null) {
+      alert('The body is not valid JSON, so it was left as it is.');
+      return;
+    }
+    setBodyContent(out.replace(/9000000000000(\d{3})/g, (_, i: string) => tokens[Number(i)]!));
   }
 
   function addBody() {
@@ -286,14 +307,21 @@ export default function RequestPanel({
                     </button>
                   ))}
                   <button className="variant-add" title="Add variant" onClick={addBody}>＋</button>
+                  {request.bodyType === 'json' && (
+                    <button
+                      className="mini-text format-btn"
+                      title="Lay the JSON out, two spaces per level"
+                      onClick={formatBody}
+                    >Format</button>
+                  )}
                 </div>
-                <VarField
-                  multiline
-                  fieldClass="body-text"
+                <CodeEditor
+                  className="body-code"
+                  lang={request.bodyType === 'json' ? 'json' : 'text'}
                   vars={vars}
                   placeholder={request.bodyType === 'json' ? '{\n  "key": "value"\n}' : 'Request body'}
                   value={body?.content || ''}
-                  onChange={(e) => setBodyContent(e.target.value)}
+                  onChange={setBodyContent}
                 />
               </>
             )}
@@ -310,11 +338,12 @@ export default function RequestPanel({
                 active environment.
               </HelpTip>
             </label>
-            <textarea
-              className="body-text"
+            <CodeEditor
+              className="script-code"
+              lang="javascript"
               placeholder={'if (res.status === 200) {\n  env.set(\'token\', res.json().access_token);\n}'}
               value={request.script || ''}
-              onChange={(e) => set({ script: e.target.value })}
+              onChange={(script) => set({ script })}
             />
           </div>
         )}
