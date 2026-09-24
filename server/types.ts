@@ -228,6 +228,14 @@ export interface Assertion {
   value?: string | number | boolean;
 }
 
+// A condition on a variable, checked before a step runs — the "only if" of a
+// get-or-create: create the customer only when looking it up found none.
+export interface Condition {
+  var: string;
+  op?: AssertOp;
+  value?: string;
+}
+
 // Per-step changes to what the saved request sends.
 export interface Overrides {
   url?: string;
@@ -249,6 +257,9 @@ export interface Step {
   enabled: boolean;
   // Teardown: runs even after an earlier step failed.
   always: boolean;
+  // Run only when every one of these holds; otherwise the step is skipped,
+  // which is not a failure. Absent on steps saved before there were any.
+  when?: Condition[];
   overrides?: Overrides;
   extract: Extraction[];
   assert: Assertion[];

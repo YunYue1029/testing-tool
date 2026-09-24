@@ -7,7 +7,7 @@
 // at run time.
 export type {
   ApiKeyAuth, Assertion, AssertOp, Auth, AuthType, BearerAuth, BodyType,
-  Collection, CollectionAuth, Environment, Extraction, FileMeta, Flow, FlowReport,
+  Collection, CollectionAuth, Condition, Environment, Extraction, FileMeta, Flow, FlowReport,
   FlowShell, Folder, FormFileRow, FormRow, FormTextRow, HeaderPair,
   HttpRequest, HttpResponse, InlineBodyType, InlineRequest, Overrides,
   RequestBody, ResponseSnapshot, ResponseSource, Row, SavedRequest,

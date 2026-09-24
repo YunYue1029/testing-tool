@@ -121,6 +121,10 @@ export function flowUsedVarNames(flow: Flow, collections: Collection[]): string[
       for (const v of Object.values(o.headers || {})) scan(v);
     }
     for (const a of step.assert || []) if (typeof a.value === 'string') scan(a.value);
+    for (const c of step.when || []) {
+      if (c.var && !captured.has(c.var)) names.add(c.var);
+      scan(c.value);
+    }
   }
   for (const n of captured) names.delete(n);
   names.delete('dy_url');

@@ -8,7 +8,7 @@ import { runRequest, runScript, resolveVars, SendError } from './runner.ts';
 import { runCommand, CommandError, ShellSession, SESSIONS_SUPPORTED } from './shell.ts';
 import { substitute, requestVars } from './resolve.ts';
 import type {
-  Assertion, AssertionResult, Collection, CommandResult, Flow, FlowReport,
+  Assertion, AssertionResult, Collection, CommandResult, Condition, Flow, FlowReport,
   HttpResponse, InlineRequest, ResponseSnapshot, RunnableHttpRequest,
   RunnableRequest, SentRequest, SentSnapshot, ScriptReport, ShellRequest, Step,
   StepReport, ValueSource, Vars,
@@ -56,6 +56,8 @@ function readFrom(
   }
 }
 
+const NO_VALUE_OPS = ['exists', 'missing'];
+
 function describe(v: unknown): string {
   if (v === undefined) return 'undefined';
   if (typeof v === 'string') return JSON.stringify(v);
@@ -78,6 +80,24 @@ function looseEq(a: unknown, b: unknown): boolean {
 function pristineAssertion(a: Assertion): boolean {
   const NEEDS_VALUE = !['exists', 'missing'].includes(a.op || 'eq');
   return !a.path && !String(a.value ?? '') && NEEDS_VALUE;
+}
+
+// Why a step's `when` stops it, or null when every condition holds. Read
+// against the environment and the run so far. An empty value counts as
+// missing: an extraction that found nothing binds '' rather than leaving the
+// name unset, and "found nothing" is exactly what a get-or-create asks about.
+function unmetCondition(when: Condition[] | undefined, vars: Vars): string | null {
+  for (const c of when || []) {
+    if (!c || !c.var) continue;
+    const raw = vars[c.var];
+    const actual = raw === '' ? undefined : raw;
+    if (compare(actual, { op: c.op || 'eq', value: c.value }, vars, c.var).ok) continue;
+    const op = c.op || 'eq';
+    const wanted = NO_VALUE_OPS.includes(op) ? '' : ` ${describe(substitute(c.value || '', vars))}`;
+    const is = actual === undefined ? 'it is unset' : `it is ${describe(actual)}`;
+    return `only runs when ${c.var} ${op}${wanted}, and ${is}`;
+  }
+  return null;
 }
 
 // Compare one actual value against an assertion row. Split out from
@@ -471,16 +491,20 @@ async function runFlow(
   const session = shellSessionFor(flow);
   let failed = false;
 
-  // What a command's {{vars}} resolve against: the environment underneath, the
-  // saved test's own values over it, and whatever this run has captured on top
-  // — the same order a request resolves in. Read once, and only if some step
-  // actually runs a command, so a flow of pure HTTP still touches nothing.
+  // The environment as a run reads it outside a request: under a command's
+  // {{vars}} (the saved test's own values over it, whatever this run has
+  // captured on top — the same order a request resolves in) and under a step's
+  // `when`. Read once, and only if some step runs a command or has a
+  // condition, so a plain flow of HTTP still touches nothing.
   let envShellVars: Vars | null = null;
-  async function shellStepVars(spec: ShellSpec): Promise<Vars> {
+  async function runEnvVars(): Promise<Vars> {
     if (!envShellVars) {
       ({ vars: envShellVars } = await resolveVars({ environmentId: envId, collection: null }));
     }
-    return { ...envShellVars, ...spec.vars, ...runVars };
+    return envShellVars;
+  }
+  async function shellStepVars(spec: ShellSpec): Promise<Vars> {
+    return { ...(await runEnvVars()), ...spec.vars, ...runVars };
   }
 
   try {
@@ -497,6 +521,16 @@ async function runFlow(
       if (failed && !step.always) {
         steps.push({ ...base, ok: true, skipped: 'an earlier step failed' });
         continue;
+      }
+      // Its own condition, asked only once the step would otherwise run. Not
+      // a failure: a step that only creates what is missing did its job by
+      // standing aside.
+      if (step.when && step.when.length) {
+        const unmet = unmetCondition(step.when, { ...(await runEnvVars()), ...runVars });
+        if (unmet) {
+          steps.push({ ...base, ok: true, skipped: unmet });
+          continue;
+        }
       }
 
       // Either the command is typed into the step, or the step points at a

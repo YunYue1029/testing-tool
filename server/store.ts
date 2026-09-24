@@ -338,6 +338,13 @@ const flows = {
         // Teardown: runs even after an earlier step failed, so a flow that
         // creates rows still deletes them.
         always: s.always === true,
+        when: (Array.isArray(s.when) ? s.when : [])
+          .filter((c) => c && typeof c.var === 'string' && c.var.trim())
+          .map((c) => ({
+            var: c.var.trim(),
+            op: c.op || 'eq',
+            value: c.value == null ? '' : String(c.value),
+          })),
         overrides: s.overrides && typeof s.overrides === 'object' ? s.overrides : undefined,
         extract: Array.isArray(s.extract) ? s.extract : [],
         assert: Array.isArray(s.assert) ? s.assert : [],

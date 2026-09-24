@@ -5,7 +5,7 @@ import {
   emptyInlineRequest, METHODS, fitToContent, isShellTest, copyableBody, withBodyOverride,
 } from '../util';
 import type {
-  Assertion, AssertOp, Collection, InlineBodyType, InlineRequest, Row, Step,
+  Assertion, AssertOp, Collection, Condition, InlineBodyType, InlineRequest, Row, Step,
   StepMode, ValueSource,
 } from '../types.ts';
 
@@ -160,6 +160,48 @@ export default function StepEditModal(
         {/* Says which step this is, no more: the name is edited on the row,
             and one field in two places is one field too many. */}
         <h3>Step {index + 1}{label ? ` — ${label}` : ''}</h3>
+
+        {/* First, because it decides whether anything below happens at all. */}
+        <div className="field-label">
+          Run only if — every row must hold, or the step is skipped (not failed). An empty
+          value counts as <code>missing</code>, so a lookup that found nothing can gate a create.
+        </div>
+        <table className="kv">
+          <tbody>
+            {(() => {
+              const wh = rowEditor<Condition>(
+                step.when,
+                (w) => set({ when: w }),
+                { var: '', op: 'missing', value: '' },
+              );
+              return wh.shown.map((c, k) => {
+                const update = (patch: Partial<Condition>) => wh.update(k, patch);
+                return (
+                  <tr key={k}>
+                    <td><input
+                      value={c.var || ''}
+                      placeholder="customer_id"
+                      onChange={(e) => update({ var: e.target.value })}
+                    /></td>
+                    <td className="narrow"><select
+                      value={c.op || 'eq'}
+                      onChange={(e) => update({ op: e.target.value as AssertOp })}
+                    >{OPS.map((o) => <option key={o} value={o}>{o}</option>)}</select></td>
+                    <td><input
+                      value={c.value || ''}
+                      placeholder={NO_VALUE.includes(c.op || '') ? '—' : 'value or {{var}}'}
+                      disabled={NO_VALUE.includes(c.op || '')}
+                      onChange={(e) => update({ value: e.target.value })}
+                    /></td>
+                    <td className="kv-del">
+                      {!wh.untouched(c) && <button title="Remove" onClick={() => wh.remove(k)}>×</button>}
+                    </td>
+                  </tr>
+                );
+              });
+            })()}
+          </tbody>
+        </table>
 
         <div className="field-label">What it runs</div>
         {/* Three ways to say what a step does; each one's settings are kept

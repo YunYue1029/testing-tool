@@ -1125,6 +1125,11 @@ function createServer() {
       '- script: for checks the rules above cannot express, using expect(cond, message).\n' +
       '- always: run this step even after an earlier one failed — use it for the delete, or a failed ' +
       'run leaves its rows behind.\n' +
+      '- when: run only if every condition holds, else the step is skipped (not failed) — ' +
+      '[{var, op, value}] with the assert ops, read against the environment and the run so far. An ' +
+      'empty value counts as missing, so get-or-create is: a lookup step extracting customer_id from ' +
+      'path "0.id", then the create step with when:[{var:"customer_id", op:"missing"}] extracting ' +
+      'the same name.\n' +
       'Run variables (including tokens a login script saves with env.set) live only for the run and ' +
       'never touch the stored environment.\n' +
       'vars: the flow\'s own inputs, {name: value} — e.g. {"project_id":"10"} for a flow that reuses ' +
@@ -1176,6 +1181,11 @@ function createServer() {
         timeout_ms: z.number().optional(),
         enabled: z.boolean().optional(),
         always: z.boolean().optional(),
+        when: z.array(z.object({
+          var: z.string(),
+          op: z.enum(['eq', 'neq', 'exists', 'missing', 'contains', 'matches', 'lt', 'gt']).optional(),
+          value: z.string().optional(),
+        })).optional(),
         extract: z.array(z.object({
           var: z.string(),
           from: z.enum([
@@ -1251,6 +1261,7 @@ function createServer() {
           timeout: s.timeout_ms,
           enabled: s.enabled !== false,
           always: s.always === true,
+          when: s.when || [],
           extract: s.extract || [],
           assert: s.assert || [],
           script: s.script || '',
