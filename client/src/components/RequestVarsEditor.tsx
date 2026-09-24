@@ -45,8 +45,13 @@ export default function RequestVarsEditor({
   // exactly the ones that would go out unresolved, so offer them by name.
   const missing = (used || []).filter((n) => !named.has(n) && !(n in (envVars || {})));
   // Names answered here that the environment also defines: worth saying, since
-  // the request's value silently wins.
-  const shadowed = [...named].filter((n) => n in (envVars || {}));
+  // the request's value silently wins — but only where there is a value in
+  // play for the selected environment. An empty one falls back to the
+  // environment, so it overrides nothing.
+  const inPlay = (r: Row) => !!(((liveId && (r.byEnv || {})[liveId]) || r.value));
+  const shadowed = list
+    .filter((r) => r.key && r.enabled !== false && inPlay(r) && r.key in (envVars || {}))
+    .map((r) => r.key);
 
   const untouched = (r: Row) => !r.key && !r.value && !Object.values(r.byEnv || {}).some(Boolean);
 

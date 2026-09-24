@@ -43,8 +43,8 @@ function ScriptResult({ scriptResult }: { scriptResult: ScriptReport | null | un
 // first thing anyone looking at a red exit code wants, not something to go
 // clicking for. The same shape a flow's shell step shows, for the same reason.
 function ShellResult(
-  { response, scriptResult }:
-  { response: ShellResponse; scriptResult: ScriptReport | null | undefined },
+  { response, scriptResult, clear }:
+  { response: ShellResponse; scriptResult: ScriptReport | null | undefined; clear: React.ReactNode },
 ) {
   const { exitCode, stdout, stderr } = response;
   return (
@@ -53,6 +53,7 @@ function ShellResult(
         <span className={`status ${exitCode === 0 ? 'ok' : 'err'}`}>exit {exitCode}</span>
         <span className="meta-item">{response.time} ms</span>
         <span className="meta-item">{fmtSize(response.size)}</span>
+        {clear}
       </div>
 
       <ScriptResult scriptResult={scriptResult} />
@@ -82,10 +83,13 @@ interface ResponsePanelProps {
   scriptResult?: ScriptReport | null;
   busyText?: string;
   emptyText?: string;
+  // Back to the empty panel: the last response, error and script result gone,
+  // so what shows next is unmistakably from the next send.
+  onClear?: () => void;
 }
 
 export default function ResponsePanel({
-  response, error, sending, scriptResult,
+  response, error, sending, scriptResult, onClear,
   // A shell test is not sending anything, and the wait is the command running.
   busyText = 'Sending request…', emptyText = 'Response will appear here',
 }: ResponsePanelProps) {
@@ -103,13 +107,24 @@ export default function ResponsePanel({
     [response, isBinary]
   );
 
+  const clear = onClear && (
+    <button className="mini-text resp-clear" title="Clear the response" onClick={onClear}>Clear</button>
+  );
+
   if (sending) return <div className="response-panel empty">{busyText}</div>;
-  if (error) return <div className="response-panel empty err">⚠ {error}</div>;
+  if (error) {
+    return (
+      <div className="response-panel empty err">
+        <div>⚠ {error}</div>
+        {clear}
+      </div>
+    );
+  }
   if (!response) return <div className="response-panel empty">{emptyText}</div>;
   // A command's result is read nothing like a response, so it gets its own
   // panel rather than a status line pretending an exit code is an HTTP status.
   if (response.kind === 'shell') {
-    return <ShellResult response={response} scriptResult={scriptResult} />;
+    return <ShellResult response={response} scriptResult={scriptResult} clear={clear} />;
   }
 
   const statusClass = response.status < 300 ? 'ok' : response.status < 400 ? 'warn' : 'err';
@@ -149,6 +164,7 @@ export default function ResponsePanel({
         </span>
         <span className="meta-item">{response.time} ms</span>
         <span className="meta-item">{fmtSize(response.size)}</span>
+        {clear}
       </div>
 
       <ScriptResult scriptResult={scriptResult} />

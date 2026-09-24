@@ -250,7 +250,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .flow-head {
   display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex: 0 0 auto;
 }
-.flow-name { flex: 1; font-size: 14px; font-weight: 600; }
+.flow-title {
+  min-width: 0; margin: 0; font-size: 14px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.flow-head .spacer { flex: 1; }
+.flow-head .env-pin { color: var(--accent); }
 /* Reads as a subtitle, not a form field: no border until you go near it, and
    indented to sit under the name rather than under the caret beside it.
    It grows with its text (see fitToContent), but only to six lines — past
@@ -267,13 +272,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
    under the one on the flow head — the two folds line up because they are the
    same gesture on two different things. */
 .flow-desc { position: relative; flex: 0 0 auto; }
-.flow-vars { flex: 0 0 auto; margin: 2px 0 6px; }
-.flow-vars-toggle {
-  background: none; border: none; padding: 2px 4px; cursor: pointer;
-  color: var(--muted); font-size: 12px;
-}
-.flow-vars-toggle:hover, .flow-vars-toggle.open { color: var(--text); }
-.flow-vars .req-vars { margin-top: 4px; }
 .desc-caret {
   position: absolute; left: 4px; top: 3px; padding: 0;
   background: none; border: none; color: var(--muted); cursor: pointer;
@@ -287,6 +285,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   cursor: pointer;
 }
 .flow-description.collapsed:hover { color: var(--text); }
+/* Read-only now, so unfolded it is just the text, line breaks kept. */
+.flow-description.open { white-space: pre-wrap; cursor: pointer; }
+.flow-settings .field-label { margin-top: 12px; }
+.flow-settings .req-vars { margin-top: 12px; }
+.flow-settings-desc { width: 100%; min-height: 60px; max-height: 40vh; resize: vertical; }
 .flow-description::placeholder { color: var(--muted); opacity: .5; }
 .flow-description:hover::placeholder { opacity: .75; }
 .flow-description:focus { color: var(--text); }
@@ -295,20 +298,21 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 /* One line: the verdict, what it took, and the way out to a report. A row
    rather than flowing text, so the button keeps the far edge instead of
    trailing whatever the sentence ends on. */
+/* The last run's verdict, a pill in the title row. */
 .flow-summary {
-  display: flex; align-items: center; gap: 4px;
-  padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 12.5px;
-  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 4px; min-width: 0;
+  padding: 3px 10px; border-radius: 12px; font-size: 12px;
+  flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .flow-summary.ok { color: var(--green); background: rgba(73, 193, 122, .12); }
 .flow-summary.err { color: var(--red); background: rgba(224, 87, 78, .12); }
 .flow-summary.none { color: var(--muted); background: var(--bg-2); }
 
-/* What the flow's commands run in, above the steps because it answers for all
+/* What the flow's commands run in, in the flow's settings: it answers for all
    of them at once — whether the shell one step leaves behind is the shell the
    next one arrives in. */
 .flow-shell-bar {
-  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 12px; margin-bottom: 4px;
   flex: 0 0 auto; color: var(--muted); font-size: 12px;
 }
 .flow-shell-bar label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
@@ -342,6 +346,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .node-sub.warn .step-summary-lead, .node-sub.warn .step-summary-what { color: var(--yellow); }
 .node-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
 .node-flags .step-flag { white-space: normal; }
+/* The chain's last node: where a new step goes. Dashed, being a place for a
+   step rather than one. */
+.node-add {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 10px; border: 1px dashed var(--border); border-radius: 8px;
+  background: transparent; color: var(--muted); font-size: 12px; cursor: pointer;
+}
+.node-add:hover { color: var(--text); border-color: var(--accent); }
 /* The connector down to the next node, hung in the gap between them. */
 .node-link {
   position: absolute; left: 22px; bottom: -17px; width: 2px; height: 16px;
@@ -546,7 +558,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .step-stderr { color: var(--red); }
 
 .step-script { min-height: 70px; }
-.add-step { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 
 /* ---- Main ---- */
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -788,6 +799,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .response-panel.empty { align-items: center; justify-content: center; color: var(--muted); }
 .response-panel.empty.err { color: var(--red); white-space: pre-wrap; text-align: center; padding: 20px; }
 .response-meta { display: flex; align-items: center; gap: 16px; margin-bottom: 4px; }
+.response-meta .resp-clear { margin-left: auto; }
+.response-panel.empty.err .resp-clear { margin-top: 10px; }
 .status { font-weight: 700; }
 .status.ok { color: var(--green); }
 .status.warn { color: var(--yellow); }
@@ -856,7 +869,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
    to pick. None of the app's variables reach it: paper is white, whatever the
    theme. @media print stays wired up too, so Cmd-P on the page still works.  */
 .report-secrets { display: flex; align-items: center; gap: 6px; padding: 4px 6px; cursor: pointer; }
-.flow-summary .report-export { margin-left: auto; padding: 2px 10px; font-size: 12px; }
+.flow-head .report-act { padding: 4px 10px; font-size: 12px; white-space: nowrap; }
+/* When the row is short of room the title gives way, not the buttons. */
+.flow-head .btn-send, .flow-head .report-act, .flow-head .mini { flex: 0 0 auto; white-space: nowrap; }
+.flow-head .flow-title { flex: 0 1 auto; }
 .print-report { display: none; }
 
 /* The render target html2pdf reads. It has to be laid out for real — an element

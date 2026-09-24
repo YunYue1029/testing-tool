@@ -1150,6 +1150,9 @@ function createServer() {
       'Always write a description: it is what tells whoever finds this flow later which case it ' +
       'covers and what it assumes, and it is the one thing a name has no room for. list_flows ' +
       'reports it, so it is also how you find the right flow again without opening each one.\n' +
+      'environment pins the flow: every run uses it, whatever environment the UI has selected. Leave ' +
+      'it out unless the flow only makes sense against one deployment — unpinned, a flow follows the ' +
+      'environment chosen when it runs.\n' +
       'Each step runs either a request typed into the step itself (mode:"inline" with '
       + 'inline:{method,url,...}) or a saved one (collection_id + request_id). Prefer inline: a step '
       + 'that exists to exercise a case is a test, and saving it would file a test case among the '
@@ -1340,7 +1343,8 @@ function createServer() {
       'Run every step in order and report what passed. Stops at the first failure — a chain cannot ' +
       'continue without the id the failed step was to produce — but steps marked always still run, ' +
       'so cleanup happens. Passing steps are reported as one line each; failures carry the assertion ' +
-      'that broke and the response body.',
+      'that broke and the response body. Without environment it runs in the flow\'s pinned ' +
+      'environment, or else the default one.',
     inputSchema: { flow_id: z.string(), environment: z.string().optional() },
   }, async ({ flow_id, environment }) => {
     const report = await api.runFlow(flow_id, { environment });

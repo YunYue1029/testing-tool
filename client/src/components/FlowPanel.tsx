@@ -1,17 +1,17 @@
-import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { IconPlus, IconClose, IconPencil, IconPlay } from './Icons';
 import AddStepModal from './AddStepModal';
 import StepEditModal from './StepEditModal';
 import FlowReportModal from './FlowReportModal';
 import FlowReportDoc from './FlowReportDoc';
-import RequestVarsEditor from './RequestVarsEditor';
+import FlowSettingsModal from './FlowSettingsModal';
 import {
-  newId, prettify, fmtSize, emptyInlineRequest, fitToContent, flowUsedVarNames,
+  newId, prettify, fmtSize, emptyInlineRequest, flowUsedVarNames,
   applyCollectionBaseUrl, buildUrl, composeUrl, requestVars, substitute,
 } from '../util';
 import type {
-  Collection, Environment, Flow, FlowShell, InlineRequest, Step, StepReport, Vars,
+  Collection, Environment, Flow, InlineRequest, Step, StepReport, Vars,
 } from '../types.ts';
 
 // A flow report as the panel receives it: the server's, plus the two things
@@ -35,6 +35,9 @@ interface FlowPanelProps {
   onChange: (flow: Flow) => void;
   onRun: () => void;
   onRunStep: (stepId: string) => void;
+  // Forget the last run: the nodes, the detail and the url preview go back to
+  // what they show before anything has run.
+  onClearReport: () => void;
   onDelete: () => void;
   running: boolean;
   runningStep: string | null;
@@ -288,13 +291,11 @@ function pdfName(name: string): string {
 // One flow: an ordered list of requests run together, with the values each step
 // hands to the next and the checks on what came back.
 export default function FlowPanel({
-  flow, collections, onChange, onRun, onRunStep, onDelete, running, runningStep, report,
+  flow, collections, onChange, onRun, onRunStep, onClearReport, onDelete, running, runningStep, report,
   environmentName, envVars, environments, activeEnvId,
 }: FlowPanelProps) {
   const [openStep, setOpenStep] = useState<string | null>(null); // step id whose detail is expanded
   const [adding, setAdding] = useState(false); // the "add step" dialog is up
-  const [varsOpen, setVarsOpen] = useState(false); // the flow's own vars are showing
-  const varCount = (flow.vars || []).filter((r) => r.key).length;
   const usedVars = useMemo(() => flowUsedVarNames(flow, collections), [flow, collections]);
   // Which step the detail panel shows. A run moves it to the first step that
   // failed — that is the one you came to read — and otherwise it stays where
@@ -342,28 +343,19 @@ export default function FlowPanel({
     return () => { cancelled = true; window.clearTimeout(t); };
   }, [capturing, flow.name]);
 
-  // The description sizes itself to its text, but the ref callback below only
-  // fires on mount — switching flows reuses the same textarea, so without this
-  // a short description would keep the height the last flow's long one left
-  // behind, and an empty one would open as a block of blank.
-  const descRef = useRef<HTMLTextAreaElement | null>(null);
+  // The description reads as one line until opened; it is edited in the
+  // settings dialog, so here it only folds and unfolds.
   const [descOpen, setDescOpen] = useState(false);
   const hasDesc = !!(flow.description || '').trim();
   // A new flow starts folded, whatever the last one was left at: the fold is
   // there to keep the steps in view, and arriving somewhere new is when that
   // matters most.
   useEffect(() => { setDescOpen(false); }, [flow.id]);
-  useLayoutEffect(() => {
-    fitToContent(descRef.current);
-  }, [flow.id, flow.description, descOpen]);
-
-  // Unfolding by clicking the line puts the cursor in it. It is an editable
-  // field either way, and a click on text you can type into that leaves you
-  // unable to type is its own small puzzle.
-  function openDesc() {
-    setDescOpen(true);
-    requestAnimationFrame(() => descRef.current?.focus());
-  }
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // The environment this flow is pinned to, when it names one that exists.
+  const pinnedEnv = flow.environmentId
+    ? environments.find((e) => e.id === flow.environmentId) || null
+    : null;
 
   const setStep = (id: string, patch: Partial<Step>) => onChange({
     ...flow,
@@ -558,13 +550,8 @@ export default function FlowPanel({
 
   const stepReport = (id: string) => (report ? report.steps.find((s) => s.id === id) : null);
 
-  // What this flow's commands run in. Absent on a flow saved before there was
-  // anything to say, and absent means one session — the same shell throughout,
-  // which is what someone writing a second command expects of the first.
-  const shell = flow.shell || {};
-  const oneShell = shell.session !== false;
+  // Whether the settings dialog has shell settings to offer.
   const hasShellStep = runsCommands(flow.steps);
-  const setShell = (patch: Partial<FlowShell>) => onChange({ ...flow, shell: { ...shell, ...patch } });
 
   // A shell step keeps its output under `shell` rather than `response`, but it
   // opens and closes the same way.
@@ -608,148 +595,93 @@ export default function FlowPanel({
   return (
     <div className="flow-panel">
       <div className="flow-head">
-        <input
-          className="flow-name"
-          value={flow.name}
-          placeholder="Flow name"
-          onChange={(e) => onChange({ ...flow, name: e.target.value })}
-        />
+        {/* The name as a title, not a field: it is set in the settings behind
+            the pencil, with everything else about the flow that is set once. */}
+        <h2 className="flow-title" title={flow.name}>{flow.name || 'Untitled flow'}</h2>
+        <button
+          className="mini bar-act"
+          title="Flow settings — name, description, environment, variables, shell"
+          onClick={() => setSettingsOpen(true)}
+        ><IconPencil /></button>
+        {pinnedEnv && (
+          <span
+            className="step-flag env-pin"
+            title="This flow always runs in this environment, whatever is selected above"
+          >runs in {pinnedEnv.name}</span>
+        )}
+        {/* The last run's verdict and what it took, beside the name it is
+            about. What a run captured is on each step's node and in the report
+            in full, so this stays one short pill. */}
+        {report && (
+          <span
+            className={`flow-summary ${report.steps.length === 0 ? 'none' : report.ok ? 'ok' : 'err'}`}
+          >
+            {/* A single step's run answers for that step only — saying "all
+                steps passed" over the other nodes' older results would be a
+                lie. A flow with no steps passes vacuously, and says so. */}
+            {report.oneStep
+              ? `${report.ok ? '✓' : '✗'} Step ${
+                flow.steps.findIndex((s) => s.id === report.oneStep) + 1} ${report.ok ? 'passed' : 'failed'} — run on its own`
+              : report.steps.length === 0
+                ? 'Nothing to run — this flow has no steps yet'
+                : report.ok ? '✓ All steps passed' : '✗ Flow failed'}
+            <span className="hint-inline"> · {report.durationMs} ms</span>
+          </span>
+        )}
+        <span className="spacer" />
+        {/* Only once there is a run to act on. */}
+        {report && (
+          <>
+            <button
+              className="btn-secondary report-act"
+              title="Write this run up as a report — download it as a PDF and send it on"
+              onClick={() => setExporting(true)}
+              disabled={!!capturing}
+            >{capturing ? 'Saving PDF…' : 'Export report'}</button>
+            <button
+              className="btn-secondary report-act"
+              title="Clear this run — every step back to not run yet"
+              onClick={onClearReport}
+              disabled={running || !!runningStep}
+            >Clear</button>
+          </>
+        )}
         <button className="btn-send" onClick={onRun} disabled={running}>
           {running ? 'Running…' : 'Run flow'}
         </button>
-        {/* Up here with the other whole-flow controls: adding a step should not
-            mean scrolling past the ones already there. Delete keeps the far
-            edge — the row's one destructive button, hardest to hit by accident. */}
-        <button
-          className="btn-secondary add-step"
-          onClick={() => setAdding(true)}
-        ><IconPlus /> Add step</button>
-        <button className="btn-secondary" onClick={onDelete}>Delete</button>
       </div>
 
-      {/* Under the name, indented to line up with it. A flow is read long after
-          it was written, usually by someone deciding whether it is the one that
-          covers the thing they just broke — and a name has no room to answer
-          that. Empty it stays one quiet line, so a flow that needs no note is
-          not made to carry one.
-
-          Folded to a single line until asked for. The steps are what the panel
-          is for, and a description written to answer "is this the one?" answers
-          it in its first few words — the rest is for the reader who has decided
-          it is. Collapsed it is a div rather than the textarea, because that is
-          the only way to end a clipped line in an ellipsis and so admit there
-          is more. */}
-      <div className="flow-desc">
-        {hasDesc && (
+      {/* Under the name, read-only, folded to one line until asked for. A flow
+          is read long after it was written, usually by someone deciding
+          whether it is the one that covers the thing they just broke, and the
+          first few words answer that. */}
+      {hasDesc && (
+        <div className="flow-desc">
           <button
             className={`caret desc-caret ${descOpen ? 'open' : ''}`}
             title={descOpen ? 'Fold the description back to one line' : 'Read the whole description'}
             onClick={() => setDescOpen((open) => !open)}
           >▸</button>
-        )}
-        {hasDesc && !descOpen ? (
           <div
-            className="flow-description collapsed"
-            title="Read the whole description"
-            onClick={openDesc}
+            className={`flow-description ${descOpen ? 'open' : 'collapsed'}`}
+            title={descOpen ? undefined : 'Read the whole description'}
+            onClick={() => setDescOpen((open) => !open)}
           >{flow.description}</div>
-        ) : (
-          <textarea
-            className="flow-description"
-            value={flow.description || ''}
-            placeholder="What this flow proves — the case it covers, and anything it assumes"
-            rows={1}
-            ref={descRef}
-            onChange={(e) => {
-              fitToContent(e.target);
-              onChange({ ...flow, description: e.target.value });
-            }}
-          />
-        )}
-      </div>
-
-      {/* Folded to a count by default: the steps are what a flow is read for,
-          and its inputs are set once and then left alone. */}
-      <div className="flow-vars">
-        <button
-          className={`flow-vars-toggle ${varsOpen ? 'open' : ''}`}
-          onClick={() => setVarsOpen((open) => !open)}
-        >
-          <span className={`caret ${varsOpen ? 'open' : ''}`}>▸</span> Variables
-          {varCount > 0 && <span className="hint-inline"> · {varCount}</span>}
-        </button>
-        {varsOpen && (
-          <RequestVarsEditor
-            rows={flow.vars || []}
-            used={usedVars}
-            envVars={envVars}
-            environments={environments}
-            activeEnvId={activeEnvId}
-            onChange={(vars) => onChange({ ...flow, vars })}
-            title="Flow variables"
-            help={(
-              <>
-                Values this flow runs with — they override the active environment and a
-                saved request&apos;s own values, and a step that captures the same name
-                overrides them. An input only this flow needs belongs here rather than in
-                an environment.
-              </>
-            )}
-          />
-        )}
-      </div>
-
-      {/* Only once there is a command to run: a flow of pure HTTP has no shell,
-          and a row asking about one would be a setting for nothing. */}
-      {hasShellStep && (
-        <div className="flow-shell-bar">
-          <label title={'One shell for every command in this flow, so a cd, an export or a sourced '
-            + 'env reaches the steps after it. Unchecked, each command gets a shell of its own and '
-            + 'starts from nothing.'}>
-            <input
-              type="checkbox"
-              checked={oneShell}
-              onChange={(e) => setShell({ session: e.target.checked })}
-            /> one shell for the whole run
-          </label>
-          <input
-            className="flow-shell-cwd"
-            value={shell.cwd || ''}
-            spellCheck={false}
-            placeholder="Working directory — the server’s own unless you say"
-            title={oneShell
-              ? 'Where the shell starts. A step that names its own directory cds there, and stays.'
-              : 'Where each command runs, unless the step names its own.'}
-            onChange={(e) => setShell({ cwd: e.target.value })}
-          />
         </div>
       )}
 
-      {report && (
-        // A flow with no steps passes vacuously; saying so beats "all steps
-        // passed" over a run that did nothing.
-        <div className={`flow-summary ${report.steps.length === 0 ? 'none' : report.ok ? 'ok' : 'err'}`}>
-          {/* A single step's run answers for that step only — saying "all steps
-              passed" over the other rows' older results would be a lie. */}
-          {report.oneStep
-            ? `${report.ok ? '✓' : '✗'} Step ${
-              flow.steps.findIndex((s) => s.id === report.oneStep) + 1} ${report.ok ? 'passed' : 'failed'} — run on its own`
-            : report.steps.length === 0
-              ? 'Nothing to run — this flow has no steps yet'
-              : report.ok ? '✓ All steps passed' : '✗ Flow failed'}
-          <span className="hint-inline"> · {report.durationMs} ms</span>
-          {/* The verdict and what it took, and nothing else: what a run
-              captured is on each step's own row, and in the report in full —
-              listing a dozen tokens here only wrapped the bar onto four lines.
-              The button lives on this bar rather than up with Run because
-              there is nothing to report until a run has happened. */}
-          <button
-            className="btn-secondary report-export"
-            title="Write this run up as a report — download it as a PDF and send it on"
-            onClick={() => setExporting(true)}
-            disabled={!!capturing}
-          >{capturing ? 'Saving PDF…' : 'Export report'}</button>
-        </div>
+      {settingsOpen && (
+        <FlowSettingsModal
+          flow={flow}
+          onChange={onChange}
+          onClose={() => setSettingsOpen(false)}
+          onDelete={() => { setSettingsOpen(false); onDelete(); }}
+          environments={environments}
+          activeEnvId={activeEnvId}
+          envVars={envVars}
+          usedVars={usedVars}
+          hasShellStep={hasShellStep}
+        />
       )}
 
       {exporting && (
@@ -803,9 +735,6 @@ export default function FlowPanel({
           if (at != null) dropStep(id, at);
         }}
       >
-        {flow.steps.length === 0 && (
-          <p className="hint">No steps yet — add one with Add step.</p>
-        )}
         {flow.steps.map((step, i) => {
           const rep = stepReport(step.id);
           const sum = stepSummary(step);
@@ -879,12 +808,18 @@ export default function FlowPanel({
                 );
               })()}
               {stepFlags(step)}
-              {/* The line down to the next node, drawn by the node itself so
-                  nothing sits between two nodes to catch a drop. */}
-              {i < flow.steps.length - 1 && <span className="node-link" aria-hidden="true" />}
+              {/* The line down to the next node — or to the add-step node
+                  under the last — drawn by the node itself so nothing sits
+                  between two nodes to catch a drop. */}
+              <span className="node-link" aria-hidden="true" />
             </div>
           );
         })}
+        {/* The chain ends in the way to extend it: a new step goes on the
+            end, so that is where the button is. */}
+        <button className="flow-node node-add" onClick={() => setAdding(true)}>
+          <IconPlus /> Add step
+        </button>
       </div>
       </div>
 

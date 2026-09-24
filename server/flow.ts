@@ -481,12 +481,17 @@ async function runFlow(
   flow: Flow,
   { environmentId, abortSignal }: RunFlowOptions = {},
 ): Promise<FlowReport> {
-  const envId = environmentId || flow.environmentId || undefined;
+  // The caller's environment, else the one the flow is pinned to, else the
+  // default — a run with none at all would resolve against nothing, and there
+  // is always an environment meant.
+  const envList = await environments.list();
+  const envId = environmentId || flow.environmentId
+    || (envList.find((e) => e.isDefault) || {}).id || undefined;
   // The environment's id, whichever way it was named: a var's per-environment
   // values are keyed by it. An unknown name is left for the first request to
   // report, as it always was.
   const envKey = envId
-    ? ((await environments.list()).find((e) => e.id === envId || e.name === envId) || {}).id
+    ? (envList.find((e) => e.id === envId || e.name === envId) || {}).id
     : undefined;
   // Seeded with the flow's own values, so they win over the environment and a
   // saved request's defaults, and a step that captures the same name wins

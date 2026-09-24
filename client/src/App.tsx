@@ -126,8 +126,8 @@ export default function App() {
     else localStorage.removeItem('activeEnvId');
   }, [activeEnvId]);
 
-  const activeVars = () => {
-    const env = environments.find((e) => e.id === activeEnvId);
+  const activeVars = (envId: string | null = activeEnvId) => {
+    const env = environments.find((e) => e.id === envId);
     const vars = env ? { ...(env.variables || {}) } : {};
     if (env) for (const k of env.disabled || []) delete vars[k];
     // base_url is shared by everyone via a built-in default; an environment
@@ -135,6 +135,14 @@ export default function App() {
     if (vars.base_url == null || vars.base_url === '') vars.base_url = DEFAULT_BASE_URL;
     return vars;
   };
+
+  // The environment the open flow runs in: its own, when it names one that
+  // still exists, pinning it whatever the bar above says; otherwise the bar's.
+  // Its runs, url preview and vars all read this one.
+  const flowEnvId = flow && flow.environmentId
+    && environments.some((e) => e.id === flow.environmentId)
+    ? flow.environmentId
+    : activeEnvId;
 
   // Active-environment vars with the collection's own base_url (if any)
   // overriding {{base_url}}.
@@ -195,6 +203,13 @@ export default function App() {
 
   function cancelSend() {
     if (sendAbort.current) sendAbort.current.abort();
+  }
+
+  // The response panel's Clear: what the last send left, gone.
+  function clearResponse() {
+    setResponse(null);
+    setError(null);
+    setScriptResult(null);
   }
 
   async function send() {
@@ -428,7 +443,7 @@ export default function App() {
       // Save first: the report is only meaningful for the steps as they stand.
       const saved = await api.saveFlow(flow);
       setFlows((fs) => fs.map((f) => (f.id === saved.id ? saved : f)));
-      const rep = await api.runFlow(saved.id, { environment: activeEnvId || undefined });
+      const rep = await api.runFlow(saved.id, { environment: flowEnvId || undefined });
       setFlowReports((all) => ({ ...all, [id]: rep }));
     } catch (e) {
       setFlowReports((all) => ({
@@ -453,7 +468,7 @@ export default function App() {
       // step as it stands right now.
       const saved = await api.saveFlow(flow);
       setFlows((fs) => fs.map((f) => (f.id === saved.id ? saved : f)));
-      const rep = await api.runFlowStep(saved.id, stepId, { environment: activeEnvId || undefined });
+      const rep = await api.runFlowStep(saved.id, stepId, { environment: flowEnvId || undefined });
       const entry = rep.steps[0];
       setFlowReports((all) => {
         const prev = all[id];
@@ -863,20 +878,21 @@ export default function App() {
         {flow ? (
           <FlowPanel
             environments={environments}
-            activeEnvId={activeEnvId}
+            activeEnvId={flowEnvId}
             flow={flow}
             collections={collections}
             onChange={setFlow}
             onRun={runFlow}
             onRunStep={runStep}
+            onClearReport={() => forgetReports([flow.id])}
             onDelete={deleteFlow}
             running={flowRunning}
             runningStep={runningStep}
             report={flowReport}
             environmentName={
-              (environments.find((e) => e.id === activeEnvId) || {}).name || null
+              (environments.find((e) => e.id === flowEnvId) || {}).name || null
             }
-            envVars={activeVars()}
+            envVars={activeVars(flowEnvId)}
           />
         ) : isShellTest(request) ? (
           <>
@@ -921,6 +937,7 @@ export default function App() {
           scriptResult={scriptResult}
           busyText="Running the command…"
           emptyText="What the command printed will appear here"
+          onClear={clearResponse}
         />
         </>
         ) : (
@@ -973,7 +990,13 @@ export default function App() {
             onClose={() => setSettingsCol(null)}
           />
         )}
-        <ResponsePanel response={response} error={error} sending={sending} scriptResult={scriptResult} />
+        <ResponsePanel
+          response={response}
+          error={error}
+          sending={sending}
+          scriptResult={scriptResult}
+          onClear={clearResponse}
+        />
         </>
         )}
       </main>
