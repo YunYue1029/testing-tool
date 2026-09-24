@@ -8,6 +8,7 @@ import FlowReportDoc from './FlowReportDoc';
 import RequestVarsEditor from './RequestVarsEditor';
 import {
   newId, prettify, fmtSize, emptyInlineRequest, fitToContent, flowUsedVarNames,
+  applyCollectionBaseUrl, buildUrl, composeUrl, requestVars, substitute,
 } from '../util';
 import type {
   Collection, Flow, FlowShell, InlineRequest, Step, StepReport, Vars,
@@ -291,12 +292,14 @@ export default function FlowPanel({
   const [varsOpen, setVarsOpen] = useState(false); // the flow's own vars are showing
   const varCount = (flow.vars || []).filter((r) => r.key).length;
   const usedVars = useMemo(() => flowUsedVarNames(flow, collections), [flow, collections]);
-  // Which steps have their response opened. A failing step opens itself — that
-  // is the one you came to read — until you say otherwise, hence storing the
-  // choice rather than the state.
-  const [respOpen, setRespOpen] = useState<Record<string, boolean>>({});
-  // A new run answers different questions than the last one did.
-  useEffect(() => { setRespOpen({}); }, [report]);
+  // Which step the detail panel shows. A run moves it to the first step that
+  // failed — that is the one you came to read — and otherwise it stays where
+  // you left it.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => {
+    const broke = report && report.steps.find((s) => !s.ok && !s.skipped);
+    if (broke) setSelectedId(broke.id);
+  }, [report]);
 
   // Writing the run up for someone who was not here. The dialog asks one
   // question — whether to print the secrets the run used — and answering it
@@ -481,6 +484,51 @@ export default function FlowPanel({
     return { lead: r.method, what: r.name || r.url, where: col.name };
   };
 
+  // Where a step's request would actually go, built by the functions the server
+  // sends with and from the same layers in the same order: the environment,
+  // the collection's base url, a saved request's own values, the flow's vars,
+  // then what the last run captured — so {{project_id}} reads as the id it was
+  // last time. A token nothing defines yet is left as written. Null for a
+  // command, or a step with nothing to send.
+  const resolvedUrl = (step: Step): { url: string; template: string } | null => {
+    if (step.mode === 'shell') return null;
+    const col = collections.find((x) => x.id === step.collectionId) || null;
+    const saved = step.mode === 'inline' ? null : savedFor(step);
+    if (step.mode !== 'inline' && (!saved || saved.kind === 'shell')) return null;
+    const vars = {
+      ...applyCollectionBaseUrl(envVars, col),
+      ...(saved ? requestVars(saved) : {}),
+      ...requestVars(flow),
+      ...(report ? report.vars : {}),
+    };
+    // An override replaces the whole url, unexpanded, exactly as runRequest does.
+    if (step.overrides && step.overrides.url != null) {
+      return { url: substitute(step.overrides.url, vars), template: step.overrides.url };
+    }
+    if (step.mode === 'inline') {
+      const r = step.request;
+      if (!r || !r.url) return null;
+      return { url: buildUrl(composeUrl([], null, r.url), r.params, vars), template: r.url };
+    }
+    if (!saved || saved.kind === 'shell' || !saved.url) return null;
+    return {
+      url: buildUrl(composeUrl(col ? col.folders || [] : [], saved.folderId, saved.url), saved.params, vars),
+      template: saved.url,
+    };
+  };
+
+  // A node has room for the part of a url that differs from step to step; the
+  // host is the same all the way down the chain and is on the detail anyway.
+  // Left whole when it will not parse — a host still written as a {{token}}.
+  const urlPath = (u: string) => {
+    try {
+      const p = new URL(u);
+      return `${p.pathname}${p.search}`;
+    } catch {
+      return u;
+    }
+  };
+
   // Ask first, as every other delete in the app does: the flow saves itself a
   // moment after this, and a step can carry extractions, assertions and a
   // script that took longer to write than the request did.
@@ -517,43 +565,45 @@ export default function FlowPanel({
   // A shell step keeps its output under `shell` rather than `response`, but it
   // opens and closes the same way.
   const hasOutput = (rep: StepReport | null | undefined) => !!(rep && (rep.response || rep.shell));
-  const showsResponse = (step: Step, rep: StepReport | null | undefined) => (
-    respOpen[step.id] !== undefined ? respOpen[step.id] : !!(rep && !rep.ok && hasOutput(rep))
+  const selected = flow.steps.find((st) => st.id === selectedId) || flow.steps[0] || null;
+
+  // What changes when a step runs, shown wherever the step is: on its node and
+  // at the top of its detail. Only the flags that are on, so one always means
+  // something.
+  const stepFlags = (step: Step) => {
+    const conds = (step.when || []).filter((c) => c.var);
+    if (!step.always && step.enabled !== false && !conds.length) return null;
+    return (
+      <div className="node-flags">
+        {step.always && (
+          <span className="step-flag" title="Runs even after an earlier step failed">teardown</span>
+        )}
+        {step.enabled === false && (
+          <span className="step-flag off" title="Skipped — this step is disabled">disabled</span>
+        )}
+        {conds.length > 0 && (
+          <span className="step-flag cond" title="Runs only when this holds; skipped otherwise">
+            if {conds.map((c) => (
+              `${c.var} ${c.op || 'eq'}${['exists', 'missing'].includes(c.op || 'eq') ? '' : ` ${c.value || ''}`}`
+            )).join(' and ')}
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  const resultBadge = (rep: StepReport | null | undefined) => rep && (
+    <span className={`step-result ${
+      rep.skipped ? '' : rep.shell ? (rep.exitCode === 0 ? 'ok' : 'err') : statusClass(rep.status)}`}
+    >
+      {rep.skipped ? 'skipped' : rep.shell ? `exit ${rep.exitCode}` : rep.status}
+      {rep.timeMs != null && ` · ${rep.timeMs}ms`}
+    </span>
   );
-
-  // Every step's output at once — reading a run means reading all of them, and
-  // eight carets is eight clicks. It says which way it will go from what is on
-  // screen now, so it always changes something: anything still closed means the
-  // press opens; nothing closed means it closes.
-  const allShown = flow.steps.length > 0
-    && flow.steps.every((s) => showsResponse(s, stepReport(s.id)));
-
-  function toggleAllResponses() {
-    // Written out per step rather than emptied back to the default, because the
-    // default is not "closed" — a failed step opens itself, and collapsing all
-    // has to be able to close that too.
-    const next: Record<string, boolean> = {};
-    for (const s of flow.steps) next[s.id] = !allShown;
-    setRespOpen(next);
-  }
 
   return (
     <div className="flow-panel">
       <div className="flow-head">
-        {/* Ahead of the name, where every step keeps its own caret — the flow is
-            the outermost node, so the control that opens all of it belongs in
-            that same left-hand column. Bare glyph, no label: what it does is the
-            same thing the carets below it do, and the title says the rest. */}
-        <button
-          className="mini expand-all"
-          title={allShown
-            ? 'Close every step’s output'
-            : 'Open every step’s output — what each one sent and got back'}
-          disabled={!flow.steps.length}
-          onClick={toggleAllResponses}
-        >
-          <span className={`caret ${allShown ? 'open' : ''}`}>▸</span>
-        </button>
         <input
           className="flow-name"
           value={flow.name}
@@ -720,14 +770,18 @@ export default function FlowPanel({
         document.body,
       )}
 
-      {/* Only the steps scroll. Run and Delete belong to the whole flow, so
-          reading the last step should not mean scrolling back up to press
-          them. */}
+      {/* The flow as a chain of nodes on the left, and whichever one is picked
+          spelled out on the right. A node says what the step is and how it
+          went; everything else — what it sent, what came back, the controls —
+          is read one step at a time, so it lives in the detail rather than
+          being unfolded row by row. Each side scrolls on its own, so reading a
+          long response never loses your place in the chain. */}
+      <div className="flow-split">
       <div className="flow-scroll">
-      {/* The steps' own gaps are handled by the rows; this catches the space
+      {/* The steps' own gaps are handled by the nodes; this catches the space
           under the last one, where "move it to the end" is aimed. */}
       <div
-        className="flow-steps"
+        className="flow-steps flow-nodes"
         onDragOver={(e) => {
           if (!draggingStep(e)) return;
           e.preventDefault();
@@ -743,21 +797,27 @@ export default function FlowPanel({
           if (at != null) dropStep(id, at);
         }}
       >
+        {flow.steps.length === 0 && (
+          <p className="hint">No steps yet — add one with Add step.</p>
+        )}
         {flow.steps.map((step, i) => {
           const rep = stepReport(step.id);
-          const open = openStep === step.id;
+          const sum = stepSummary(step);
           return (
             <div
               key={step.id}
               className={[
                 'flow-step',
+                'flow-node',
                 rep ? (rep.skipped ? 'skipped' : rep.ok ? 'pass' : 'fail') : '',
+                selected && selected.id === step.id ? 'selected' : '',
                 dragStepId === step.id ? 'dragging' : '',
                 dropAt === i ? 'drop-above' : '',
-                // Only the last row answers for the gap under it; every other
-                // gap is some row's "above".
+                // Only the last node answers for the gap under it; every other
+                // gap is some node's "above".
                 dropAt === flow.steps.length && i === flow.steps.length - 1 ? 'drop-below' : '',
               ].filter(Boolean).join(' ')}
+              onClick={() => setSelectedId(step.id)}
               onDragOver={(e) => stepDragOver(e, i)}
               onDrop={(e) => {
                 if (!draggingStep(e)) return;
@@ -770,34 +830,6 @@ export default function FlowPanel({
               }}
             >
               <div className="flow-step-head">
-                {/* Always here, run or not: the way into a step's output should
-                    be in the same place before you have run anything, not a
-                    control that appears once there is a status to click. */}
-                <button
-                  className="mini step-toggle"
-                  title={showsResponse(step, rep) ? 'Hide the output' : 'Show what came back'}
-                  onClick={() => setRespOpen({ ...respOpen, [step.id]: !showsResponse(step, rep) })}
-                >
-                  <span className={`caret ${showsResponse(step, rep) ? 'open' : ''}`}>▸</span>
-                </button>
-                {/* Run this one on its own — the loop of fixing a request and
-                    trying it again, without the steps in front of it. It starts
-                    with no run variables, so a step that needs what an earlier
-                    one captured will say so. */}
-                <button
-                  className="mini step-play"
-                  title="Run just this step (without the ones before it)"
-                  disabled={running || !!runningStep}
-                  onClick={() => onRunStep(step.id)}
-                >
-                  {runningStep === step.id ? <span className="step-spin">◌</span> : <IconPlay />}
-                </button>
-                {/* A part of the row whose whole job is being grabbed, so what
-                    can be dragged is visible rather than something you have to
-                    discover. A span and not a <button>: Chrome and Safari never
-                    start a drag from a form control, whatever `draggable` says,
-                    which is why the number could not be dragged. role and
-                    tabIndex give back what the button element was providing. */}
                 <span
                   className="step-grip"
                   role="button"
@@ -826,29 +858,62 @@ export default function FlowPanel({
                   }}
                 />
                 <span className="step-no">{i + 1}</span>
+                <span className="node-name">{stepLabel(step, i)}</span>
+                {resultBadge(rep)}
+              </div>
+              {(() => {
+                const u = resolvedUrl(step);
+                return (
+                  <div className={`node-sub ${sum.warn ? 'warn' : ''}`}>
+                    {sum.lead && <span className="step-summary-lead">{sum.lead}</span>}
+                    <span className="step-summary-what" title={u ? u.url : sum.what}>
+                      {u ? urlPath(u.url) : sum.what}
+                    </span>
+                  </div>
+                );
+              })()}
+              {stepFlags(step)}
+              {/* The line down to the next node, drawn by the node itself so
+                  nothing sits between two nodes to catch a drop. */}
+              {i < flow.steps.length - 1 && <span className="node-link" aria-hidden="true" />}
+            </div>
+          );
+        })}
+      </div>
+      </div>
+
+      <div className="flow-detail">
+        {selected && (() => {
+          const step = selected;
+          const i = flow.steps.indexOf(step);
+          const rep = stepReport(step.id);
+          const sum = stepSummary(step);
+          return (
+            <>
+              <div className="flow-step-head">
+                <span className="step-no">{i + 1}</span>
                 <input
                   className="step-name"
                   value={step.name}
                   placeholder="Step name"
                   onChange={(e) => setStep(step.id, { name: e.target.value })}
                 />
-                {/* Both flags are edited behind the pencil; only the one that
-                    changes when the step runs is worth a place out here. */}
-                {step.always && (
-                  <span className="step-flag" title="Runs even after an earlier step failed">
-                    teardown
-                  </span>
-                )}
-                {step.enabled === false && (
-                  <span className="step-flag off" title="Skipped — this step is disabled">
-                    disabled
-                  </span>
-                )}
-
+                {/* Run this one on its own — the loop of fixing a request and
+                    trying it again, without the steps in front of it. It starts
+                    with only the flow's own vars, so a step that needs what an
+                    earlier one captured will say so. */}
+                <button
+                  className="mini bar-act step-play"
+                  title="Run just this step (without the ones before it)"
+                  disabled={running || !!runningStep}
+                  onClick={() => onRunStep(step.id)}
+                >
+                  {runningStep === step.id ? <span className="step-spin">◌</span> : <IconPlay />}
+                </button>
                 <button
                   className="mini bar-act"
-                  title={open ? 'Hide details' : 'Extractions, assertions, script'}
-                  onClick={() => setOpenStep(open ? null : step.id)}
+                  title="Edit — what it runs, when it runs, extractions, assertions, script"
+                  onClick={() => setOpenStep(step.id)}
                 ><IconPencil /></button>
                 <button
                   className="mini bar-act danger"
@@ -856,73 +921,60 @@ export default function FlowPanel({
                   onClick={() => removeStep(step, i)}
                 ><IconClose /></button>
               </div>
+              {stepFlags(step)}
 
-              {/* What this step sends and how it went, on one line: the call
-                  and its verdict are read together. Read-only — the pickers
-                  behind it live in the dialog the pencil opens, so nothing here
-                  changes under a stray click. */}
               {(() => {
-                const s = stepSummary(step);
+                const u = resolvedUrl(step);
                 return (
-                  <div className={`step-summary ${s.warn ? 'warn' : ''}`}>
-                    {s.lead && <span className="step-summary-lead">{s.lead}</span>}
-                    <span className="step-summary-what">{s.what}</span>
-                    {rep && (
-                      <span className={`step-result ${
-                        rep.skipped ? '' : rep.shell ? (rep.exitCode === 0 ? 'ok' : 'err') : statusClass(rep.status)}`}
-                      >
-                        {rep.skipped ? 'skipped' : rep.shell ? `exit ${rep.exitCode}` : rep.status}
-                        {rep.timeMs != null && ` · ${rep.timeMs}ms`}
+                  <>
+                    <div className={`step-summary ${sum.warn ? 'warn' : ''}`}>
+                      {sum.lead && <span className="step-summary-lead">{sum.lead}</span>}
+                      <span className="step-summary-what" title={u ? u.url : sum.what}>
+                        {u ? u.url : sum.what}
                       </span>
+                      {resultBadge(rep)}
+                      {sum.where && <span className="step-summary-where">{sum.where}</span>}
+                    </div>
+                    {/* What it was written as — a saved step by its name as
+                        well — so the url above can be traced back to it. */}
+                    {u && (u.template !== u.url || step.mode === 'saved') && (
+                      <div className="step-template">
+                        {step.mode === 'saved' && sum.what !== u.template && <>{sum.what} · </>}
+                        <code>{u.template}</code>
+                      </div>
                     )}
-                    {s.where && <span className="step-summary-where">{s.where}</span>}
-                  </div>
+                  </>
                 );
               })()}
 
-              {/* Both summaries below are the closed-up view of what the
-                  response panel spells out, so they stand down when it opens. */}
-              {rep && !rep.ok && !rep.skipped && !showsResponse(step, rep) && (
-                <div className="step-failures">
-                  {(rep.assertions || []).filter((a) => !a.ok).map((a, k) => (
-                    <div key={k}>✗ {a.detail}</div>
-                  ))}
-                  {rep.error && <div>✗ {rep.error}</div>}
-                  {rep.script && <div>✗ script: {rep.script.error}</div>}
-                </div>
-              )}
-              {rep && rep.ok && rep.extracted && !showsResponse(step, rep) && (
+              {/* An HTTP response lists what it captured itself; a command's
+                  output does not, so it is said here instead. */}
+              {rep && rep.extracted && !rep.response && (
                 <div className="step-extracted">
                   captured {Object.entries(rep.extracted).map(([k, v]) => `${k} = ${v}`).join(', ')}
                 </div>
               )}
-              {/* Opening a step that has not run says so rather than doing
-                  nothing — the toggle is there before there is a run, so it has
-                  to answer for itself. */}
-              {showsResponse(step, rep) && (
-                hasOutput(rep)
-                  ? (rep!.shell ? <StepShellOutput rep={rep!} /> : <StepResponse rep={rep!} />)
-                  : (
-                    <div className="step-response">
-                      {/* A refused send and a command that never started have
-                          no output at all, and the call is then the whole of
-                          what there is to read — it used to say "no output" and
-                          leave the url and the error to be guessed at. */}
-                      {rep && !rep.skipped && <StepSent rep={rep} />}
-                      {rep && rep.error && (
-                        <div className="step-checks"><div className="err">✗ {rep.error}</div></div>
-                      )}
-                      {rep && rep.hint && <p className="hint">{rep.hint}</p>}
-                      <p className="hint">
-                        {!rep ? 'Not run yet — run the flow to see what came back.'
-                          : rep.skipped ? `Skipped — ${rep.skipped}.`
-                          : 'Nothing came back.'}
-                      </p>
-                    </div>
-                  )
-              )}
+              {hasOutput(rep)
+                ? (rep!.shell ? <StepShellOutput rep={rep!} /> : <StepResponse rep={rep!} />)
+                : (
+                  <div className="step-response">
+                    {/* A refused send and a command that never started have no
+                        output at all, and the call is then the whole of what
+                        there is to read. */}
+                    {rep && !rep.skipped && <StepSent rep={rep} />}
+                    {rep && rep.error && (
+                      <div className="step-checks"><div className="err">✗ {rep.error}</div></div>
+                    )}
+                    {rep && rep.hint && <p className="hint">{rep.hint}</p>}
+                    <p className="hint">
+                      {!rep ? 'Not run yet — run the flow, or just this step, to see what came back.'
+                        : rep.skipped ? `Skipped — ${rep.skipped}.`
+                        : 'Nothing came back.'}
+                    </p>
+                  </div>
+                )}
 
-              {open && (
+              {openStep === step.id && (
                 <StepEditModal
                   step={step}
                   index={i}
@@ -932,9 +984,9 @@ export default function FlowPanel({
                   onClose={() => setOpenStep(null)}
                 />
               )}
-            </div>
+            </>
           );
-        })}
+        })()}
       </div>
       </div>
 

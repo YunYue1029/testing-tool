@@ -320,6 +320,53 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 }
 
 .flow-steps { display: flex; flex-direction: column; gap: 8px; }
+
+/* The chain on the left, the picked step on the right; each scrolls alone. */
+.flow-split {
+  flex: 1; min-height: 0; display: grid; gap: 14px;
+  grid-template-columns: minmax(240px, 34%) minmax(0, 1fr);
+}
+.flow-split > .flow-scroll { padding-right: 4px; }
+.flow-nodes { gap: 16px; }
+.flow-node { cursor: pointer; padding: 8px 10px; }
+.flow-node:hover { border-color: var(--muted); }
+.flow-node.selected { border-color: var(--accent); background: var(--bg-3); }
+.flow-node.pass.selected { border-left-color: var(--green); }
+.flow-node.fail.selected { border-left-color: var(--red); }
+.node-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px;
+}
+.node-sub {
+  display: flex; align-items: baseline; gap: 6px; margin-top: 4px;
+  font-size: 11px; color: var(--muted); min-width: 0;
+}
+.node-sub.warn .step-summary-lead, .node-sub.warn .step-summary-what { color: var(--yellow); }
+.node-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.node-flags .step-flag { white-space: normal; }
+/* The connector down to the next node, hung in the gap between them. */
+.node-link {
+  position: absolute; left: 22px; bottom: -17px; width: 2px; height: 16px;
+  background: var(--border); pointer-events: none;
+}
+.flow-detail {
+  min-height: 0; overflow-y: auto; padding: 12px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg-2);
+}
+.flow-detail > .node-flags { margin: 6px 0 0 26px; }
+/* The whole url, wrapped: this is where it is read in full. */
+.flow-detail .step-summary { align-items: flex-start; }
+.flow-detail .step-summary-what { white-space: normal; word-break: break-all; }
+.step-template {
+  margin: 4px 0 0 2px; font-size: 11px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.step-template code { font-family: 'SF Mono', Menlo, Consolas, monospace; }
+.flow-detail .mini { opacity: .75; }
+.flow-detail .mini:hover:not(:disabled) { opacity: 1; }
+@media (max-width: 900px) {
+  .flow-split { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+}
 .flow-step {
   border: 1px solid var(--border); border-radius: 8px; padding: 10px;
   background: var(--bg-2); border-left: 3px solid var(--border);
@@ -372,18 +419,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .step-result.ok { color: var(--green); }
 .step-result.warn { color: var(--yellow); }
 .step-result.err { color: var(--red); }
-/* Opens what came back. Sits ahead of the number so it is in the same place on
-   every step, whether or not that step has run — which is also why it carries
-   its own opacity: `.mini` hides until its row is hovered, and a step's only
-   way into its output must not be invisible. */
-.step-toggle {
-  flex: 0 0 18px; display: inline-flex; align-items: center; justify-content: center;
-  border: none; background: transparent; padding: 0; color: var(--muted);
-  opacity: .65;
-}
-.step-toggle:hover { opacity: 1; color: var(--text); background: transparent; }
-/* Runs this step alone. Beside the toggle, so the two things you do to one step
-   without opening it sit together at the head of the row. */
+/* Runs this step alone, first of the detail panel's controls. */
 .step-play { opacity: .65; }
 .step-play:hover:not(:disabled) { opacity: 1; color: var(--green); }
 .step-play:disabled { opacity: .25; }
@@ -423,6 +459,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   font-size: 11px; white-space: nowrap;
 }
 .step-flag.off { color: var(--yellow); }
+.step-flag.cond { font-family: 'SF Mono', Menlo, Consolas, monospace; }
 /* The URL of a typed-in request gets its own line: it is the longest thing in
    a step and the head row has no width left to give it. */
 .step-request { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
@@ -460,7 +497,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   display: flex; gap: 16px; margin-top: 8px; color: var(--muted); font-size: 12px;
 }
 .flow-step-flags label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
-.step-failures { margin-top: 8px; color: var(--red); font-size: 12px; }
 .step-extracted { margin-top: 6px; color: var(--muted); font-size: 12px; }
 .step-body {
   margin: 6px 0 0; padding: 8px; max-height: 160px; overflow: auto;
@@ -513,15 +549,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 
 .step-script { min-height: 70px; }
 .add-step { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-/* The whole-flow twin of the caret on every step, sitting in the same left-hand
-   column they do. `.mini` would fade it until its row is hovered; this one has
-   to stay visible, being the only way to open every step at once. */
-.expand-all {
-  flex: 0 0 18px; display: inline-flex; align-items: center; justify-content: center;
-  padding: 0; opacity: .65;
-}
-.expand-all:hover:not(:disabled) { opacity: 1; color: var(--text); }
-.expand-all:disabled { opacity: .3; cursor: not-allowed; }
 
 /* ---- Main ---- */
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
