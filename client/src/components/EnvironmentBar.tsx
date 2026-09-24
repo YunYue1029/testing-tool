@@ -12,6 +12,7 @@ interface EnvDraft {
   id: string | null;
   name: string;
   rows: Row[];
+  isDefault: boolean;
 }
 
 interface EnvironmentBarProps {
@@ -48,7 +49,7 @@ export default function EnvironmentBar({
     const urlVars = [...new Set(collections.map((c) => baseUrlVar(c.baseUrl)).filter(Boolean))];
     const rows = urlVars.map((key) => ({ key: key as string, value: '', enabled: true }));
     rows.push({ key: '', value: '', enabled: true });
-    setEditing({ id: null, name: 'New Environment', rows });
+    setEditing({ id: null, name: 'New Environment', rows, isDefault: false });
   }
 
   function openEdit(env: Environment) {
@@ -56,7 +57,7 @@ export default function EnvironmentBar({
     const rows = Object.entries(env.variables || {})
       .map(([key, value]) => ({ key, value, enabled: !off.includes(key) }));
     rows.push({ key: '', value: '', enabled: true });
-    setEditing({ id: env.id, name: env.name, rows });
+    setEditing({ id: env.id, name: env.name, rows, isDefault: !!env.isDefault });
   }
 
   // Written as the variables are edited, not when a button says so: an
@@ -74,6 +75,7 @@ export default function EnvironmentBar({
     }
     const saved = await onSaveEnv({
       id: draft.id || undefined, name: draft.name || 'Untitled', variables, disabled,
+      isDefault: draft.isDefault,
     });
     // The draft stops being new here, or the next keystroke would create a
     // second environment instead of writing this one again. The id is the
@@ -279,6 +281,16 @@ export default function EnvironmentBar({
               onChange={(e) => setEditing({ ...editing, name: e.target.value })}
               onKeyDown={(e) => { if (e.key === 'Enter') closeEditor(); }}
             />
+            {/* Which environment a request's or flow's vars read `value` from —
+                the column every other environment falls back to. */}
+            <label className="env-default">
+              <input
+                type="checkbox"
+                checked={editing.isDefault}
+                onChange={(e) => setEditing({ ...editing, isDefault: e.target.checked })}
+              /> Default environment — request and flow vars use its values wherever another
+              environment has none of its own
+            </label>
             <KeyValueEditor
               rows={editing.rows}
               onChange={(rows) => setEditing({ ...editing, rows })}

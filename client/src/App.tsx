@@ -145,7 +145,7 @@ export default function App() {
   // kept on the request itself.
   const previewVars = () => ({
     ...varsForCol(collections.find((c) => c.id === collectionId)),
-    ...requestVars(request),
+    ...requestVars(request, activeEnvId),
   });
 
   // Where the open test lives, for the line above the panel. Null while it is
@@ -862,6 +862,8 @@ export default function App() {
         />
         {flow ? (
           <FlowPanel
+            environments={environments}
+            activeEnvId={activeEnvId}
             flow={flow}
             collections={collections}
             onChange={setFlow}
@@ -879,6 +881,8 @@ export default function App() {
         ) : isShellTest(request) ? (
           <>
         <ShellTestPanel
+          environments={environments}
+          activeEnvId={activeEnvId}
           test={request}
           onChange={setRequest}
           onRun={send}
@@ -922,6 +926,8 @@ export default function App() {
         ) : (
           <>
         <RequestPanel
+          environments={environments}
+          activeEnvId={activeEnvId}
           request={request}
           onChange={setRequest}
           onSend={send}

@@ -3,7 +3,7 @@
 // the next and checking what came back. A step either points at a saved
 // request, carries one typed straight into it, or runs a shell command, for the
 // part of a feature that never shows up in an HTTP response.
-import { collections } from './store.ts';
+import { collections, environments } from './store.ts';
 import { runRequest, runScript, resolveVars, SendError } from './runner.ts';
 import { runCommand, CommandError, ShellSession, SESSIONS_SUPPORTED } from './shell.ts';
 import { substitute, requestVars } from './resolve.ts';
@@ -295,7 +295,7 @@ interface ShellSpec {
 // directory, timeout, variable values and script; the step may override the
 // first two and adds its own checks on top, exactly as it does for a saved
 // request.
-function shellSpec(step: Step, saved: ShellRequest | null): ShellSpec {
+function shellSpec(step: Step, saved: ShellRequest | null, envKey?: string): ShellSpec {
   if (!saved) {
     return {
       command: step.command || '',
@@ -309,7 +309,7 @@ function shellSpec(step: Step, saved: ShellRequest | null): ShellSpec {
     command: saved.command || '',
     cwd: step.cwd || saved.cwd || '',
     timeout: step.timeout || saved.timeout,
-    vars: requestVars(saved),
+    vars: requestVars(saved, envKey),
     scripts: [saved.script, step.script],
   };
 }
@@ -482,10 +482,16 @@ async function runFlow(
   { environmentId, abortSignal }: RunFlowOptions = {},
 ): Promise<FlowReport> {
   const envId = environmentId || flow.environmentId || undefined;
+  // The environment's id, whichever way it was named: a var's per-environment
+  // values are keyed by it. An unknown name is left for the first request to
+  // report, as it always was.
+  const envKey = envId
+    ? ((await environments.list()).find((e) => e.id === envId || e.name === envId) || {}).id
+    : undefined;
   // Seeded with the flow's own values, so they win over the environment and a
   // saved request's defaults, and a step that captures the same name wins
   // over them.
-  const runVars: Vars = requestVars(flow);
+  const runVars: Vars = requestVars(flow, envKey);
   const started = Date.now();
   const steps: StepReport[] = [];
   const session = shellSessionFor(flow);
@@ -552,7 +558,7 @@ async function runFlow(
       };
 
       if (step.mode === 'shell') {
-        await runCommandStep(shellSpec(step, null));
+        await runCommandStep(shellSpec(step, null, envKey));
         continue;
       }
 
@@ -565,7 +571,7 @@ async function runFlow(
       const { collection, request } = target;
 
       if (request.kind === 'shell') {
-        await runCommandStep(shellSpec(step, request));
+        await runCommandStep(shellSpec(step, request, envKey));
         continue;
       }
 

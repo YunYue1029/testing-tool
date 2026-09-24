@@ -7,7 +7,7 @@ import RequestAuthEditor from './RequestAuthEditor';
 import HelpTip from './HelpTip';
 import { METHODS, emptyBody, activeBody, requestVars, usedVarNames } from '../util';
 import type {
-  AuthDescription, BodyType, FileMeta, HttpRequest, RequestBody,
+  AuthDescription, BodyType, Environment, FileMeta, HttpRequest, RequestBody,
   Vars,
 } from '../types.ts';
 
@@ -27,11 +27,15 @@ interface RequestPanelProps {
   collectionName?: string;
   onUploadFile: (file: File) => Promise<FileMeta>;
   envVars: Vars;
+  // Every environment and the one selected, for the vars editor's columns and
+  // for reading each var's value as the selected environment would.
+  environments: Environment[];
+  activeEnvId: string | null;
 }
 
 export default function RequestPanel({
   request, onChange, onSend, onCancel, onSave, sending, saveStatus, vars, crumb, composedUrl, urlVars,
-  auth, collectionName, onUploadFile, envVars,
+  auth, collectionName, onUploadFile, envVars, environments, activeEnvId,
 }: RequestPanelProps) {
   const [tab, setTab] = useState('params');
   const set = (patch: Partial<HttpRequest>) => onChange({ ...request, ...patch });
@@ -42,7 +46,7 @@ export default function RequestPanel({
   // {{token}} the request uses has no value anywhere — the thing you want to
   // notice before wondering why the URL went out with braces in it.
   const used = usedVarNames(request);
-  const varCount = Object.keys(requestVars(request)).length;
+  const varCount = Object.keys(requestVars(request, activeEnvId)).length;
   const unsetVars = used.filter((n) => !(n in (vars || {})));
 
   function setBodyContent(content: string) {
@@ -145,6 +149,8 @@ export default function RequestPanel({
             rows={request.vars || []}
             used={used}
             envVars={envVars}
+            environments={environments}
+            activeEnvId={activeEnvId}
             onChange={(v) => set({ vars: v })}
           />
         )}

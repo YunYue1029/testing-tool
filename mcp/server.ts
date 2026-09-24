@@ -92,6 +92,57 @@ function ok(data: unknown) {
 }
 
 // ---- environment helpers ----
+// A var as a tool call writes it: one value, which is the default
+// environment's, or {default, <environment name>: value} where environments
+// really differ.
+const varValue = z.union([z.string(), z.record(z.string(), z.string())]);
+type VarValue = z.infer<typeof varValue>;
+
+// Stored rows from what a tool call gave. Environments are named the way a
+// caller knows them and stored by id, so a rename does not strand the value.
+async function varsToRows(
+  obj: Record<string, VarValue> | undefined,
+  { trailingBlank = false } = {},
+): Promise<Row[]> {
+  const envs = await api.listEnvironments();
+  const out: Row[] = Object.entries(obj || {}).map(([key, v]) => {
+    if (typeof v === 'string') return { key, value: v, enabled: true };
+    const byEnv: Record<string, string> = {};
+    for (const [name, value] of Object.entries(v)) {
+      if (name === 'default' || value === '') continue;
+      const env = envs.find((e) => e.id === name || e.name === name);
+      if (!env) {
+        throw new Error(`vars.${key}: no environment "${name}" — have: `
+          + `${envs.map((e) => e.name).join(', ') || 'none'} (or "default")`);
+      }
+      byEnv[env.id] = value;
+    }
+    return {
+      key, value: v.default || '', enabled: true,
+      ...(Object.keys(byEnv).length ? { byEnv } : {}),
+    };
+  });
+  if (trailingBlank) out.push({ key: '', value: '', enabled: true });
+  return out;
+}
+
+// The other way: a plain value where a var has one, {default, <name>: value}
+// where it also varies by environment — the shape varsToRows takes back.
+async function varsOut(rows: Row[] | undefined): Promise<Record<string, VarValue>> {
+  const withEnv = (rows || []).some((r) => r.byEnv && Object.keys(r.byEnv).length);
+  if (!withEnv) return rowsToPlainObject(rows);
+  const names = new Map((await api.listEnvironments()).map((e) => [e.id, e.name]));
+  const out: Record<string, VarValue> = {};
+  for (const r of rows || []) {
+    if (r.enabled === false || !r.key) continue;
+    const own = Object.entries(r.byEnv || {}).filter(([id]) => names.has(id));
+    out[r.key] = own.length
+      ? { default: r.value, ...Object.fromEntries(own.map(([id, v]) => [names.get(id)!, v])) }
+      : r.value;
+  }
+  return out;
+}
+
 async function findEnv(ref: string | undefined) {
   if (!ref) return null;
   const envs = await api.listEnvironments();
@@ -454,7 +505,7 @@ function createServer() {
         command: r.command || '',
         cwd: r.cwd || '',
         timeout_ms: r.timeout || null,
-        vars: rowsToPlainObject(r.vars),
+        vars: await varsOut(r.vars),
         script: r.script || '',
       };
     }
@@ -481,7 +532,7 @@ function createServer() {
       // Values kept on the request itself, which beat the environment when it
       // runs — without them it is impossible to tell from here why {{user_id}}
       // resolves for this request and nowhere else.
-      vars: rowsToPlainObject(r.vars),
+      vars: await varsOut(r.vars),
       // Only when the request does not simply inherit — otherwise a login here
       // looks identical to one that carries the collection's token.
       ...(requestAuthType(r) === 'inherit' ? {} : { auth: r.auth || { type: 'none' } }),
@@ -697,7 +748,9 @@ function createServer() {
       'Pass an empty object to clear headers/params/vars. Set request.folder_id to place it in a folder ' +
       '(see create_folder / get_collection). Prefer {{dy_url}}/... urls so the folder path applies.\n' +
       'vars: values for this request only, overriding the environment — put the {{user_id}} that one ' +
-      'fetch-one call needs here rather than in an environment everything else carries.\n' +
+      'fetch-one call needs here rather than in an environment everything else carries. A value is ' +
+      'the default environment\'s; where environments differ give {"default":"11","remote90":"96"} — ' +
+      'an environment with no value of its own uses the default.\n' +
       'script: JS run after the response, e.g. env.set("token", res.json().access_token) on a login ' +
       'request so later requests resolve {{token}}. Reads res.status / res.headers / res.cookies / ' +
       'res.body / res.json().\n' +
@@ -718,7 +771,7 @@ function createServer() {
         body_type: z.enum(['none', 'json', 'text']).optional(),
         body: z.string().optional(),
         folder_id: z.string().optional(),
-        vars: z.record(z.string(), z.string()).optional(),
+        vars: z.record(z.string(), varValue).optional(),
         auth: z.object({
           type: z.enum(['inherit', 'none', 'bearer', 'apikey']),
           prefix: z.string().optional(),
@@ -777,7 +830,9 @@ function createServer() {
       folderId: request.folder_id !== undefined
         ? (request.folder_id || null)
         : (prev ? prev.folderId || null : null),
-      vars: request.vars !== undefined ? rows(request.vars) : (prev ? prev.vars || [] : []),
+      vars: request.vars !== undefined
+        ? await varsToRows(request.vars, { trailingBlank: true })
+        : (prev ? prev.vars || [] : []),
       // Omitted keeps what is there, whole — reducing it to its type alone
       // would drop the token beside it. Dropping noAuth as the request is
       // rewritten keeps one live answer per request rather than a stale
@@ -896,7 +951,7 @@ function createServer() {
         cwd: z.string().optional(),
         timeout_ms: z.number().int().positive().optional(),
         folder_id: z.string().optional(),
-        vars: z.record(z.string(), z.string()).optional(),
+        vars: z.record(z.string(), varValue).optional(),
         // Runs after the command: sh.exitCode / sh.stdout / sh.stderr, plus the
         // same res a request's script gets (res.status is the exit code,
         // res.body is stdout) and env.set to keep a value.
@@ -934,7 +989,7 @@ function createServer() {
       // Saved tests are opened in the UI, so they keep the trailing empty row
       // an editable list expects.
       vars: test.vars !== undefined
-        ? toRows(test.vars, { trailingBlank: true })
+        ? await varsToRows(test.vars, { trailingBlank: true })
         : (prev ? prev.vars || [] : []),
       script: keep(test.script, prev ? prev.script : undefined, ''),
     };
@@ -1133,7 +1188,8 @@ function createServer() {
       'Run variables (including tokens a login script saves with env.set) live only for the run and ' +
       'never touch the stored environment.\n' +
       'vars: the flow\'s own inputs, {name: value} — e.g. {"project_id":"10"} for a flow that reuses ' +
-      'an existing project. They start the run: over the environment and a saved request\'s own ' +
+      'an existing project, or {"dispatch_employee_ids":{"default":"11,12","remote90":"96,97"}} where ' +
+      'environments differ. They start the run: over the environment and a saved request\'s own ' +
       'values, under anything a step captures. Put an input only this flow needs here, not in an ' +
       'environment. Omitted on a replace, the stored ones are kept.',
     inputSchema: {
@@ -1142,7 +1198,7 @@ function createServer() {
       description: z.string().optional(),
       folder_id: z.string().optional(),
       environment: z.string().optional(),
-      vars: z.record(z.string(), z.string()).optional(),
+      vars: z.record(z.string(), varValue).optional(),
       // What the flow's shell steps run in, for all of them at once.
       shell_session: z.boolean().optional(),
       shell_cwd: z.string().optional(),
@@ -1228,7 +1284,7 @@ function createServer() {
       // A replace that says nothing about vars keeps them — editing a step
       // should not quietly wipe the inputs the flow runs with.
       vars: vars
-        ? Object.entries(vars).map(([key, value]) => ({ key, value, enabled: true }))
+        ? await varsToRows(vars)
         : (flow_id ? ((await api.getFlow(flow_id))?.vars || []) : []),
       shell: { session: shell_session !== false, cwd: shell_cwd || '' },
       steps: (steps || []).map((s, i) => {

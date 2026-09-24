@@ -47,12 +47,23 @@ function rowsToObject(rows: Row[] | undefined, vars: Vars = {}): Record<string, 
 // so an id only one call cares about (the {{user_id}} of a fetch-one) doesn't
 // have to be declared in an environment everything else carries. A row with no
 // value is skipped, which is how it falls back to the environment again.
-function requestVars(request: { vars?: Row[] } | null | undefined): Vars {
+// A flow's vars are read the same way.
+//
+// A row may carry a value per environment (byEnv, keyed by environment id):
+// the active environment's is used when it has one, and an environment
+// without falls back to `value` — the default environment's. So a value only
+// needs writing twice where two environments really differ.
+function requestVars(
+  request: { vars?: Row[] } | null | undefined,
+  envId?: string | null,
+): Vars {
   const out: Vars = {};
   for (const r of (request && request.vars) || []) {
     if (r.enabled === false) continue;
-    if (!r.key || r.value == null || r.value === '') continue;
-    out[r.key] = r.value;
+    const own = envId && r.byEnv ? r.byEnv[envId] : undefined;
+    const value = own != null && own !== '' ? own : r.value;
+    if (!r.key || value == null || value === '') continue;
+    out[r.key] = value;
   }
   return out;
 }

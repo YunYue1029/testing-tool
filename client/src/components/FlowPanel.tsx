@@ -11,7 +11,7 @@ import {
   applyCollectionBaseUrl, buildUrl, composeUrl, requestVars, substitute,
 } from '../util';
 import type {
-  Collection, Flow, FlowShell, InlineRequest, Step, StepReport, Vars,
+  Collection, Environment, Flow, FlowShell, InlineRequest, Step, StepReport, Vars,
 } from '../types.ts';
 
 // A flow report as the panel receives it: the server's, plus the two things
@@ -45,6 +45,10 @@ interface FlowPanelProps {
   // The active environment's values, so the vars editor can say which of the
   // flow's own override it and which tokens nothing defines.
   envVars: Vars;
+  // Every environment and the one selected, for the vars editor's columns and
+  // for reading each var's value as the selected environment would.
+  environments: Environment[];
+  activeEnvId: string | null;
 }
 
 // Its own type, like the sidebar's two: it says a dragover is one of ours, and
@@ -285,7 +289,7 @@ function pdfName(name: string): string {
 // hands to the next and the checks on what came back.
 export default function FlowPanel({
   flow, collections, onChange, onRun, onRunStep, onDelete, running, runningStep, report,
-  environmentName, envVars,
+  environmentName, envVars, environments, activeEnvId,
 }: FlowPanelProps) {
   const [openStep, setOpenStep] = useState<string | null>(null); // step id whose detail is expanded
   const [adding, setAdding] = useState(false); // the "add step" dialog is up
@@ -497,8 +501,8 @@ export default function FlowPanel({
     if (step.mode !== 'inline' && (!saved || saved.kind === 'shell')) return null;
     const vars = {
       ...applyCollectionBaseUrl(envVars, col),
-      ...(saved ? requestVars(saved) : {}),
-      ...requestVars(flow),
+      ...(saved ? requestVars(saved, activeEnvId) : {}),
+      ...requestVars(flow, activeEnvId),
       ...(report ? report.vars : {}),
     };
     // An override replaces the whole url, unexpanded, exactly as runRequest does.
@@ -679,6 +683,8 @@ export default function FlowPanel({
             rows={flow.vars || []}
             used={usedVars}
             envVars={envVars}
+            environments={environments}
+            activeEnvId={activeEnvId}
             onChange={(vars) => onChange({ ...flow, vars })}
             title="Flow variables"
             help={(

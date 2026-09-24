@@ -13,7 +13,7 @@ import {
   applyCollectionBaseUrl, envVars, requestVars, DEFAULT_BASE_URL,
 } from './resolve.ts';
 import type {
-  AssertionResult, Collection, Environment, HttpResponse, Overrides, RunnableHttpRequest,
+  AssertionResult, Collection, Environment, HttpResponse, Overrides, Row, RunnableHttpRequest,
   HttpRunResult, ScriptReport, ScriptResponse, ScriptResult, SentFormRow, SentRequest,
   SentShellCommand, ShellRequest, ShellResponse, ShellRunResult, Vars,
 } from './types.ts';
@@ -335,6 +335,10 @@ function buildRequest(
 interface ResolveVarsArgs {
   environmentId?: string | undefined;
   collection: Collection | null;
+  // Whose own vars sit between the environment and `vars` — a request's or a
+  // shell test's. Read here because which of a row's values applies depends
+  // on the environment this call resolves.
+  request?: { vars?: Row[] } | null;
   vars?: Vars;
 }
 
@@ -342,7 +346,7 @@ interface ResolveVarsArgs {
 // override, then anything the caller supplies (a flow's run-scoped values,
 // which must win over the stored environment).
 async function resolveVars(
-  { environmentId, collection, vars: extra }: ResolveVarsArgs,
+  { environmentId, collection, request, vars: extra }: ResolveVarsArgs,
 ): Promise<{ vars: Vars; env: Environment | null }> {
   let env: Environment | null = null;
   if (environmentId) {
@@ -353,7 +357,7 @@ async function resolveVars(
   let vars = envVars(env);
   if (vars.base_url == null || vars.base_url === '') vars.base_url = DEFAULT_BASE_URL;
   vars = applyCollectionBaseUrl(vars, collection);
-  return { vars: { ...vars, ...(extra || {}) }, env };
+  return { vars: { ...vars, ...requestVars(request, env && env.id), ...(extra || {}) }, env };
 }
 
 // Where a script's env.set() calls end up. Into the stored environment for a
@@ -409,7 +413,8 @@ async function runShellRequest({
   const { vars, env } = await resolveVars({
     environmentId,
     collection,
-    vars: { ...requestVars(request), ...(extraVars || {}) },
+    request,
+    vars: extraVars,
   });
 
   const command = substitute(request.command || '', vars);
@@ -520,7 +525,8 @@ async function runRequest({
   const { vars, env } = await resolveVars({
     environmentId,
     collection,
-    vars: { ...requestVars(request), ...(extraVars || {}) },
+    request,
+    vars: extraVars,
   });
   const sent = buildRequest(collection, request, vars, overrides);
   let response: HttpResponse;

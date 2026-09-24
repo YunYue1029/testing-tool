@@ -179,20 +179,41 @@ const environments = {
   list: (): Promise<Environment[]> => listFrom<Environment>(ENVIRONMENTS_DIR),
   get: (id: string): Promise<Environment | null> =>
     readJson<Environment | null>(path.join(ENVIRONMENTS_DIR, `${id}.json`), null),
-  save(env: EnvironmentInput): Promise<Environment> {
+  async save(env: EnvironmentInput): Promise<Environment> {
     const id = env.id || newId();
-    const record: Environment = {
-      id,
-      name: env.name || 'Untitled Environment',
-      variables: env.variables && typeof env.variables === 'object' ? env.variables : {},
-      // Keys listed here keep their value but are excluded from substitution.
-      disabled: Array.isArray(env.disabled) ? env.disabled : [],
-      updatedAt: new Date().toISOString(),
-    };
-    return withLock(`env:${id}`, async () => {
-      await writeJson(path.join(ENVIRONMENTS_DIR, `${id}.json`), record);
-      return record;
+    const file = path.join(ENVIRONMENTS_DIR, `${id}.json`);
+    const record = await withLock(`env:${id}`, async () => {
+      // The editor saves name and variables as they are typed and says
+      // nothing about being the default, so a save that leaves the flag out
+      // keeps what is stored rather than clearing it.
+      const stored = env.isDefault === undefined ? await readJson<Environment | null>(file, null) : null;
+      const rec: Environment = {
+        id,
+        name: env.name || 'Untitled Environment',
+        variables: env.variables && typeof env.variables === 'object' ? env.variables : {},
+        // Keys listed here keep their value but are excluded from substitution.
+        disabled: Array.isArray(env.disabled) ? env.disabled : [],
+        ...((env.isDefault === undefined ? !!(stored && stored.isDefault) : env.isDefault === true)
+          ? { isDefault: true } : {}),
+        updatedAt: new Date().toISOString(),
+      };
+      await writeJson(file, rec);
+      return rec;
     });
+    // One default at a time: marking this one unmarks whichever was.
+    if (record.isDefault) {
+      for (const other of await environments.list()) {
+        if (other.id === id || !other.isDefault) continue;
+        await withLock(`env:${other.id}`, async () => {
+          const f = path.join(ENVIRONMENTS_DIR, `${other.id}.json`);
+          const cur = await readJson<Environment | null>(f, null);
+          if (!cur || !cur.isDefault) return;
+          const { isDefault: _was, ...rest } = cur;
+          await writeJson(f, { ...rest, updatedAt: new Date().toISOString() });
+        });
+      }
+    }
+    return record;
   },
   // Add each key, empty, to every environment that lacks it — a new
   // collection's url variable, there to fill in whichever one you switch to.
@@ -300,11 +321,18 @@ const flows = {
       // The flow's own variables, as rows so an unchecked one keeps its value.
       vars: (Array.isArray(flow.vars) ? flow.vars : [])
         .filter((r) => r && typeof r.key === 'string')
-        .map((r): Row => ({
-          key: r.key,
-          value: typeof r.value === 'string' ? r.value : '',
-          ...(r.enabled === false ? { enabled: false } : {}),
-        })),
+        .map((r): Row => {
+          const byEnv = r.byEnv && typeof r.byEnv === 'object'
+            ? Object.fromEntries(Object.entries(r.byEnv)
+              .filter(([k, v]) => k && typeof v === 'string' && v !== ''))
+            : {};
+          return {
+            key: r.key,
+            value: typeof r.value === 'string' ? r.value : '',
+            ...(r.enabled === false ? { enabled: false } : {}),
+            ...(Object.keys(byEnv).length ? { byEnv } : {}),
+          };
+        }),
       // What the flow's shell steps run in. One session by default — the same
       // shell for every command in the run, so a cd or an export reaches the
       // steps after it, which is what makes a sequence of commands worth

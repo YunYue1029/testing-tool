@@ -3,7 +3,7 @@ import VarField from './VarField';
 import RequestVarsEditor from './RequestVarsEditor';
 import HelpTip from './HelpTip';
 import { usedVarNames, requestVars } from '../util';
-import type { ShellRequest, Vars } from '../types.ts';
+import type { Environment, ShellRequest, Vars } from '../types.ts';
 
 // A saved test that runs a command. It sits where the request panel sits and is
 // run by the same button, because it answers the same question — did the thing
@@ -23,19 +23,24 @@ interface ShellTestPanelProps {
   saveStatus: string;
   vars: Vars;
   envVars: Vars;
+  // Every environment and the one selected, for the vars editor's columns and
+  // for reading each var's value as the selected environment would.
+  environments: Environment[];
+  activeEnvId: string | null;
   crumb: string | null;
   resolvedCommand: string;
 }
 
 export default function ShellTestPanel({
-  test, onChange, onRun, onCancel, onSave, running, saveStatus, vars, envVars, crumb,
+  test, onChange, onRun, onCancel, onSave, running, saveStatus, vars, envVars, environments,
+  activeEnvId, crumb,
   resolvedCommand,
 }: ShellTestPanelProps) {
   const [tab, setTab] = useState('vars');
   const set = (patch: Partial<ShellRequest>) => onChange({ ...test, ...patch });
 
   const used = usedVarNames(test);
-  const varCount = Object.keys(requestVars(test)).length;
+  const varCount = Object.keys(requestVars(test, activeEnvId)).length;
   const unsetVars = used.filter((n) => !(n in (vars || {})));
 
   return (
@@ -112,6 +117,8 @@ export default function ShellTestPanel({
             rows={test.vars || []}
             used={used}
             envVars={envVars}
+            environments={environments}
+            activeEnvId={activeEnvId}
             onChange={(v) => set({ vars: v })}
           />
         )}

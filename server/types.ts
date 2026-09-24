@@ -18,6 +18,10 @@ export interface Row {
   value: string;
   // Absent counts as enabled; only an explicit false switches a row off.
   enabled?: boolean;
+  // Per-environment values for a variable row (a request's or a flow's vars),
+  // keyed by environment id. The active environment's wins when it has one;
+  // otherwise `value` does, which is the default environment's.
+  byEnv?: Record<string, string>;
 }
 
 // ---- Auth ----
@@ -171,6 +175,10 @@ export interface Environment {
   variables: Record<string, string>;
   // Keys that keep their value but are excluded from substitution.
   disabled: string[];
+  // The environment a request's or flow's vars take `value` from — the one
+  // every other environment falls back to where it has no value of its own.
+  // At most one is marked.
+  isDefault?: boolean;
   updatedAt: string;
 }
 
@@ -179,6 +187,7 @@ export interface EnvironmentInput {
   name?: string;
   variables?: Record<string, string>;
   disabled?: string[];
+  isDefault?: boolean;
   updatedAt?: string;
 }
 
