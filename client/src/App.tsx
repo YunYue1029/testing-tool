@@ -15,7 +15,7 @@ import ShellTestPanel from './components/ShellTestPanel';
 import {
   newRequest, newShellTest, isShellTest, normalizeRequest, substitute,
   newId, folderPath, folderWithDescendants, composeUrl, dyUrl, DEFAULT_BASE_URL,
-  applyCollectionBaseUrl, describeAuth, requestVars,
+  applyCollectionBaseUrl, describeAuth, requestVars, buildUrl,
 } from './util';
 import type {
   Collection, Environment, Flow, FlowReport, Folder, RunResponse, SavedRequest,
@@ -962,10 +962,13 @@ export default function App() {
             // expansion, with {{base_url}} resolved to its actual value too.
             return { ...vars, dy_url: substitute(dyUrl(col ? col.folders || [] : [], request.folderId), vars) };
           })()}
-          composedUrl={(() => {
+          resolvedUrl={(() => {
+            // Built by the server's own functions, query params and all, so it
+            // is the url a flow step with this request shows too.
             const col = collections.find((c) => c.id === collectionId);
             const composed = composeUrl(col ? col.folders || [] : [], request.folderId, request.url) || '';
-            return composed !== request.url ? substitute(composed, previewVars()) : null;
+            const full = buildUrl(composed, request.params, previewVars());
+            return full !== request.url ? full : null;
           })()}
           auth={(() => {
             const col = collections.find((c) => c.id === collectionId);

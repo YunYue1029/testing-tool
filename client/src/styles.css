@@ -644,6 +644,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .method-PUT, .method-PATCH { color: #4e9de0; }
 .method-DELETE { color: var(--red); }
 .url-input { flex: 1; }
+/* The url as where it goes: dressed as the field it turns into on a click,
+   in the same mono a flow step's url is shown in. */
+.url-resolved {
+  min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-2); color: var(--text); cursor: text;
+  font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.url-resolved:hover { border-color: var(--muted); }
 .btn-send { background: var(--accent); border-color: var(--accent); font-weight: 600; min-width: 72px; }
 .btn-send:hover { background: var(--accent-h); }
 .btn-cancel {

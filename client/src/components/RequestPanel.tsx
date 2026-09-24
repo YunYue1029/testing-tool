@@ -21,7 +21,9 @@ interface RequestPanelProps {
   saveStatus: string;
   vars: Vars;
   crumb: string | null;
-  composedUrl: string | null;
+  // Where the request actually goes, when that differs from what it is
+  // written as; null when the url has nothing to resolve.
+  resolvedUrl: string | null;
   urlVars: Vars;
   auth: AuthDescription;
   collectionName?: string;
@@ -34,10 +36,15 @@ interface RequestPanelProps {
 }
 
 export default function RequestPanel({
-  request, onChange, onSend, onCancel, onSave, sending, saveStatus, vars, crumb, composedUrl, urlVars,
+  request, onChange, onSend, onCancel, onSave, sending, saveStatus, vars, crumb, resolvedUrl, urlVars,
   auth, collectionName, onUploadFile, envVars, environments, activeEnvId,
 }: RequestPanelProps) {
   const [tab, setTab] = useState('params');
+  // The url reads as where it goes, the way a flow step shows it, until you
+  // go to change it — then it is what it is written as, with where it goes
+  // underneath.
+  const [urlEditing, setUrlEditing] = useState(false);
+  const showResolved = !urlEditing && !!resolvedUrl;
   const set = (patch: Partial<HttpRequest>) => onChange({ ...request, ...patch });
 
   const body = activeBody(request);
@@ -88,14 +95,28 @@ export default function RequestPanel({
         >
           {METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
-        <VarField
-          className="url-input"
-          vars={urlVars || vars}
-          placeholder="https://api.example.com/users  ({{dy_url}} = base_url + folder path)"
-          value={request.url}
-          onChange={(e) => set({ url: e.target.value })}
-          onKeyDown={(e) => { if (e.key === 'Enter') onSend(); }}
-        />
+        {showResolved ? (
+          <div
+            className="url-input url-resolved"
+            role="button"
+            tabIndex={0}
+            title="Where this request goes — click to edit what it is written as"
+            onClick={() => setUrlEditing(true)}
+            onFocus={() => setUrlEditing(true)}
+          >{resolvedUrl}</div>
+        ) : (
+          <VarField
+            className="url-input"
+            vars={urlVars || vars}
+            placeholder="https://api.example.com/users  ({{dy_url}} = base_url + folder path)"
+            value={request.url}
+            autoFocus={urlEditing}
+            onFocus={() => setUrlEditing(true)}
+            onBlur={() => setUrlEditing(false)}
+            onChange={(e) => set({ url: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter') onSend(); }}
+          />
+        )}
         {sending ? (
           <button className="btn-cancel" onClick={onCancel} title="Stop waiting for this request">
             Cancel
@@ -108,11 +129,17 @@ export default function RequestPanel({
           <span className={`save-status ${saveStatus === 'Save failed' ? 'err' : ''}`}>{saveStatus}</span>
         )}
       </div>
-      {composedUrl && (
-        <div className="url-effective" title="Full URL that will be sent">
-          → {composedUrl}
+      {/* The other half of the pair: what it is written as under where it
+          goes, or — while editing — where it goes under what you are typing. */}
+      {resolvedUrl && (showResolved ? (
+        <div className="url-effective url-template" title="What the url is written as">
+          {request.url}
         </div>
-      )}
+      ) : (
+        <div className="url-effective" title="Full URL that will be sent">
+          → {resolvedUrl}
+        </div>
+      ))}
       <div className="tabs">
         <button className={tab === 'params' ? 'active' : ''} onClick={() => setTab('params')}>
           Params
