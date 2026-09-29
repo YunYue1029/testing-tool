@@ -90,22 +90,23 @@ function StepSent({ rep }: { rep: StepReport }) {
   if (!req) return null;
   const body = prettify(req.body || '');
   const count = Object.keys(req.headers || {}).length;
+  // The method and url that went out are on the step's summary line above,
+  // so what is left here is what that line can't hold. A bare GET has none.
+  if (count === 0 && !body && !req.form) return null;
   return (
     <div className="step-sent">
-      <div className="step-sent-line">
-        <span className="step-summary-lead">{req.method}</span>
-        <span className="step-sent-url" title={req.url}>{req.url}</span>
-        {/* Behind a click, unlike the body: the headers that went out are mostly
-            the collection's auth and a Content-Type, and they would push what
-            was actually posted off the screen. */}
-        {count > 0 && (
+      {/* Behind a click, unlike the body: the headers that went out are mostly
+          the collection's auth and a Content-Type, and they would push what
+          was actually posted off the screen. */}
+      {count > 0 && (
+        <div className="step-sent-line">
           <button
             className="mini-text"
             title="The headers this step sent, auth included"
             onClick={() => setHeaders(!headers)}
-          >{headers ? 'Hide' : `${count} header${count === 1 ? '' : 's'}`}</button>
-        )}
-      </div>
+          >{headers ? 'Hide headers' : `${count} header${count === 1 ? '' : 's'} sent`}</button>
+        </div>
+      )}
       {headers && (
         <table className="headers-view">
           <tbody>
@@ -814,19 +815,25 @@ export default function FlowPanel({
 
               {(() => {
                 const u = resolvedUrl(step);
+                // Once it has run, the url it actually sent rather than the one
+                // worked out from today's vars — the only copy of it on screen.
+                const sent = rep && rep.request ? rep.request : null;
+                const url = sent ? sent.url : u ? u.url : null;
                 return (
                   <>
                     <div className={`step-summary ${sum.warn ? 'warn' : ''}`}>
-                      {sum.lead && <span className="step-summary-lead">{sum.lead}</span>}
-                      <span className="step-summary-what" title={u ? u.url : sum.what}>
-                        {u ? u.url : sum.what}
+                      {(sent ? sent.method : sum.lead) && (
+                        <span className="step-summary-lead">{sent ? sent.method : sum.lead}</span>
+                      )}
+                      <span className="step-summary-what" title={url || sum.what}>
+                        {url || sum.what}
                       </span>
                       {resultBadge(rep)}
                       {sum.where && <span className="step-summary-where">{sum.where}</span>}
                     </div>
                     {/* What it was written as — a saved step by its name as
                         well — so the url above can be traced back to it. */}
-                    {u && (u.template !== u.url || step.mode === 'saved') && (
+                    {u && (u.template !== url || step.mode === 'saved') && (
                       <div className="step-template">
                         {step.mode === 'saved' && sum.what !== u.template && <>{sum.what} · </>}
                         <code>{u.template}</code>
