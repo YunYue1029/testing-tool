@@ -14,8 +14,6 @@ interface SidebarProps {
   envBar: React.ReactNode;
   collections: Collection[];
   activeRequestId: string | null;
-  onNewRequest: () => void;
-  onNewShellTest: () => void;
   onNewShellTestIn: (col: Collection, folderId: string | null) => void;
   onOpenRequest: (col: Collection, r: SavedRequest) => void;
   onNewCollection: () => void;
@@ -90,7 +88,7 @@ function Marked({ text, query }: { text: string; query: string }) {
 // so a plain shallow comparison is enough to skip it.
 function Sidebar({
   envBar, collections, activeRequestId,
-  onNewRequest, onNewShellTest, onNewShellTestIn, onOpenRequest,
+  onNewShellTestIn, onOpenRequest,
   onNewCollection, onOpenCollectionSettings, onDeleteCollection, onDeleteRequest,
   onRenameRequest, onMoveRequest, onNewRequestIn, onNewFolder, onRenameFolder, onDeleteFolder,
   onImport, onExport,
@@ -283,8 +281,9 @@ function Sidebar({
 
   // ---- Filing a flow by dragging it ----
   // Which folder a flow sits in is a fact about the tree, so it is answered
-  // here, where the tree is: drag the flow onto the folder it belongs to, or
-  // onto the "Flows" header to take it back out to the root.
+  // here, where the tree is: drag the flow onto the folder it belongs to. A
+  // flow always sits in one, so only a folder can go back out to the root, by
+  // the "Flows" header.
   const [dragFlowId, setDragFlowId] = useState<string | null>(null); // the flow under the cursor
   const [dropInto, setDropInto] = useState<string | null | undefined>(undefined); // folder id, null = root
   // The folder being dragged, if it is a folder and not a flow. In a ref as
@@ -295,13 +294,14 @@ function Sidebar({
   const dragFolderRef = useRef<string | null>(null);
 
   function flowDropProps(folderId: string | null) {
-    // What this head takes. A flow, always. A folder only if that would not
-    // file it inside itself or its own subtree — which would cut the branch
-    // off the tree, leaving it in the file and reachable from nothing.
+    // What this head takes. A flow, anywhere but the root. A folder only if
+    // that would not file it inside itself or its own subtree — which would
+    // cut the branch off the tree, leaving it in the file and reachable from
+    // nothing.
     const takes = (e: React.DragEvent): boolean => {
       // getData is sealed until the drop, so a dragover has only the type to
       // go on — which also keeps files dragged in from the desktop out.
-      if (e.dataTransfer.types.includes(FLOW_DRAG_TYPE)) return true;
+      if (e.dataTransfer.types.includes(FLOW_DRAG_TYPE)) return folderId !== null;
       if (!e.dataTransfer.types.includes(FLOW_FOLDER_DRAG_TYPE)) return false;
       const moving = dragFolderRef.current;
       if (!moving || moving === folderId) return false;
@@ -637,39 +637,27 @@ function Sidebar({
         <button className={`tab ${page === 'tests' ? 'active' : ''}`} onClick={() => showPage('tests')}>
           Tests
         </button>
-        {/* Also the root of the flow tree: dropping a flow or a folder here
-            takes it back out of whatever folder it was in. */}
+        {/* Also the root of the flow tree: dropping a folder here takes it
+            back out of whatever folder it was in. Not a flow — none is left
+            outside a folder. */}
         <button
           className={`tab ${page === 'flows' ? 'active' : ''} ${dropInto === null ? 'drop-into' : ''}`}
-          title="Flows — drop a flow or folder here to move it to the top level"
+          title="Flows — drop a folder here to move it to the top level"
           onClick={() => showPage('flows')}
           {...flowDropProps(null)}
         >
           Flows
         </button>
-        {/* Plus makes the thing itself, the icon beside it makes the container.
-            A plain request belongs to no collection and is not saved anywhere
-            yet, so it shows up in the panel rather than in the tree. */}
-        {page === 'tests' ? (
-          <span className="side-acts">
-            <button
-              className="mini bar-act add"
-              title="New request — a blank one, not filed in any collection"
-              onClick={() => onNewRequest()}
-            ><IconPlus /></button>
-            <button
-              className="mini bar-act"
-              title="New shell test — a command instead of a request, filed nowhere yet"
-              onClick={() => onNewShellTest()}
-            ><IconTerminal /></button>
+        {/* Only the container, on either page: a test or a flow is made from
+            the plus on the collection or folder it belongs in, so nothing is
+            ever left lying outside one. */}
+        <span className="side-acts">
+          {page === 'tests' ? (
             <button className="mini bar-act" title="New collection" onClick={() => onNewCollection()}><IconCollection /></button>
-          </span>
-        ) : (
-          <span className="side-acts">
-            <button className="mini bar-act add" title="New flow" onClick={() => onNewFlow()}><IconPlus /></button>
+          ) : (
             <button className="mini bar-act" title="New flow folder" onClick={() => onNewFlowFolder(null)}><IconFolder /></button>
-          </span>
-        )}
+          )}
+        </span>
       </div>
 
       {/* Outside the scroller: the box has to stay put while its results move. */}

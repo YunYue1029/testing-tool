@@ -355,15 +355,6 @@ export default function App() {
     await req.open(c.id, normalizeRequest(r), 'Saved');
   }
 
-  // A blank request in the panel, filed nowhere and written nowhere — the one
-  // you type into to try something, and save afterwards if it was worth
-  // keeping. The plus inside a collection is the other thing: that one creates
-  // the request in the collection straight away.
-  async function newReq(draft: SavedRequest = newRequest()) {
-    await fd.close();
-    await req.open(null, draft, '');
-  }
-
   const newCollection = attempt('Could not create the collection', async () => {
     const name = prompt('Collection name:', 'New Collection');
     if (!name) return;
@@ -425,8 +416,6 @@ export default function App() {
     />
   ), [environments, activeEnvId, collections, envHandlers]);
   const side = useEvents({
-    onNewRequest: () => { void newReq(); },
-    onNewShellTest: () => { void newReq(newShellTest()); },
     onNewShellTestIn: newShellTestIn,
     onOpenRequest: openRequest,
     onNewCollection: newCollection,
