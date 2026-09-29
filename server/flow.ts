@@ -646,6 +646,9 @@ async function runFlow(
 
   try {
     for (const step of flow.steps || []) {
+      // Stopped between steps: nothing in flight saw the signal, so the loop
+      // has to. Teardown doesn't run either — stopping means stop.
+      if (abortSignal && abortSignal.aborted) throw cancelledSend();
       const base = { id: step.id, name: step.name || '', always: !!step.always };
 
       if (step.enabled === false) {

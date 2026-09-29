@@ -29,6 +29,9 @@ export interface FlowDraft {
   runningStep: string | null; // step id being run on its own
   runFlow: (envId: string | null) => Promise<void>;
   runStep: (stepId: string, envId: string | null) => Promise<void>;
+  // Give up on the run in flight, the whole flow's or one step's. The
+  // server sees the connection go and stops before the next step.
+  stop: () => void;
 }
 
 // A flow is rewritten whole, so its updatedAt moves even when nothing about
@@ -60,6 +63,9 @@ export default function useFlowDraft({ putFlow }: Deps): FlowDraft {
   });
   const [running, setRunning] = useState(false);
   const [runningStep, setRunningStep] = useState<string | null>(null);
+  // Held while a run is in flight so Run can turn into Stop.
+  const runAbort = useRef<AbortController | null>(null);
+  const stopped = (e: unknown) => (e as Error).name === 'AbortError';
 
   // Save first: a report is only meaningful for the steps as they stand.
   // A write that failed leaves the draft dirty, and running the server's
@@ -75,19 +81,27 @@ export default function useFlowDraft({ putFlow }: Deps): FlowDraft {
     // `flow` at the end: the run takes seconds, and by then the open flow may
     // be another one entirely.
     const id = flow.id;
+    const controller = new AbortController();
+    runAbort.current = controller;
+    const started = Date.now();
     setRunning(true);
     forgetReports([id]);
     try {
       await saveFirst();
-      const rep = await api.runFlow(id, { environment: envId || undefined });
+      const rep = await api.runFlow(id, { environment: envId || undefined }, controller.signal);
       setReports((all) => ({ ...all, [id]: rep }));
     } catch (e) {
+      // A stop is the user's own doing, not a failure to report as one. What
+      // the steps before it did is gone with the connection that carried it.
       setReports((all) => ({
         ...all,
-        [id]: { ok: false, durationMs: 0, steps: [], vars: {}, error: (e as Error).message },
+        [id]: stopped(e)
+          ? { ok: false, durationMs: Date.now() - started, steps: [], vars: {}, stopped: true }
+          : { ok: false, durationMs: 0, steps: [], vars: {}, error: (e as Error).message },
       }));
-      alert(`Could not run the flow: ${(e as Error).message}`);
+      if (!stopped(e)) alert(`Could not run the flow: ${(e as Error).message}`);
     } finally {
+      runAbort.current = null;
       setRunning(false);
     }
   }
@@ -98,10 +112,14 @@ export default function useFlowDraft({ putFlow }: Deps): FlowDraft {
   async function runStep(stepId: string, envId: string | null) {
     if (!flow) return;
     const id = flow.id;
+    const controller = new AbortController();
+    runAbort.current = controller;
     setRunningStep(stepId);
     try {
       await saveFirst();
-      const rep = await api.runFlowStep(id, stepId, { environment: envId || undefined });
+      const rep = await api.runFlowStep(
+        id, stepId, { environment: envId || undefined }, controller.signal,
+      );
       const entry = rep.steps[0]!;
       setReports((all) => {
         const prev = all[id];
@@ -121,8 +139,10 @@ export default function useFlowDraft({ putFlow }: Deps): FlowDraft {
         };
       });
     } catch (e) {
-      alert(`Could not run the step: ${(e as Error).message}`);
+      // Stopped: the step's row keeps what it showed before.
+      if (!stopped(e)) alert(`Could not run the step: ${(e as Error).message}`);
     } finally {
+      runAbort.current = null;
       setRunningStep(null);
     }
   }
@@ -153,5 +173,6 @@ export default function useFlowDraft({ putFlow }: Deps): FlowDraft {
     runningStep,
     runFlow,
     runStep,
+    stop: () => { if (runAbort.current) runAbort.current.abort(); },
   };
 }

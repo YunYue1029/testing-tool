@@ -55,6 +55,7 @@ export interface RunReport extends Partial<FlowReport> {
   vars: Vars;
   error?: string;
   oneStep?: string;
+  stopped?: boolean; // given up on before it finished
 }
 
 // What came back from a run, as the panels show it. A shell test answers with

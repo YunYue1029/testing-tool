@@ -475,6 +475,7 @@ export default function App() {
             onChange={fd.edit}
             onRun={() => fd.runFlow(flowEnvId)}
             onRunStep={(stepId) => fd.runStep(stepId, flowEnvId)}
+            onStop={fd.stop}
             onClearReport={() => fd.forgetReports([flow.id])}
             onDelete={deleteFlow}
             running={fd.running}

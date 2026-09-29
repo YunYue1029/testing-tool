@@ -23,6 +23,7 @@ interface FlowPanelProps {
   onChange: (flow: Flow) => void;
   onRun: () => void;
   onRunStep: (stepId: string) => void;
+  onStop: () => void;
   // Forget the last run: the nodes, the detail and the url preview go back to
   // what they show before anything has run.
   onClearReport: () => void;
@@ -229,7 +230,7 @@ function pdfName(name: string): string {
 // One flow: an ordered list of requests run together, with the values each step
 // hands to the next and the checks on what came back.
 export default function FlowPanel({
-  flow, collections, onChange, onRun, onRunStep, onClearReport, onDelete, running, runningStep, report,
+  flow, collections, onChange, onRun, onRunStep, onStop, onClearReport, onDelete, running, runningStep, report,
   environmentName, envVars, environments, activeEnvId,
 }: FlowPanelProps) {
   const [openStep, setOpenStep] = useState<string | null>(null); // step id whose detail is expanded
@@ -552,12 +553,14 @@ export default function FlowPanel({
             in full, so this stays one short pill. */}
         {report && (
           <span
-            className={`flow-summary ${report.steps.length === 0 ? 'none' : report.ok ? 'ok' : 'err'}`}
+            className={`flow-summary ${report.stopped || report.steps.length === 0 ? 'none' : report.ok ? 'ok' : 'err'}`}
           >
             {/* A single step's run answers for that step only — saying "all
                 steps passed" over the other nodes' older results would be a
                 lie. A flow with no steps passes vacuously, and says so. */}
-            {report.oneStep
+            {report.stopped
+              ? '■ Stopped before it finished'
+              : report.oneStep
               ? `${report.ok ? '✓' : '✗'} Step ${
                 flow.steps.findIndex((s) => s.id === report.oneStep) + 1} ${report.ok ? 'passed' : 'failed'} — run on its own`
               : report.steps.length === 0
@@ -570,12 +573,15 @@ export default function FlowPanel({
         {/* Only once there is a run to act on. */}
         {report && (
           <>
-            <button
-              className="btn-secondary report-act"
-              title="Write this run up as a report — download it as a PDF and send it on"
-              onClick={() => setExporting(true)}
-              disabled={!!capturing}
-            >{capturing ? 'Saving PDF…' : 'Export report'}</button>
+            {/* A stopped run brought nothing back to write up. */}
+            {!report.stopped && (
+              <button
+                className="btn-secondary report-act"
+                title="Write this run up as a report — download it as a PDF and send it on"
+                onClick={() => setExporting(true)}
+                disabled={!!capturing}
+              >{capturing ? 'Saving PDF…' : 'Export report'}</button>
+            )}
             <button
               className="btn-secondary report-act"
               title="Clear this run — every step back to not run yet"
@@ -584,9 +590,13 @@ export default function FlowPanel({
             >Clear</button>
           </>
         )}
-        <button className="btn-send" onClick={onRun} disabled={running}>
-          {running ? 'Running…' : 'Run flow'}
-        </button>
+        {running || runningStep ? (
+          <button className="btn-cancel" onClick={onStop} title="Stop this run before the next step">
+            Stop
+          </button>
+        ) : (
+          <button className="btn-send" onClick={onRun}>Run flow</button>
+        )}
       </div>
 
       {/* Under the name, read-only, folded to one line until asked for. A flow
