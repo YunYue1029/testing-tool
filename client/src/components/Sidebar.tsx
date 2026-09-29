@@ -466,15 +466,18 @@ function Sidebar({
   }
 
   // The flow tree, same shape as a collection's: folders first, then the flows
-  // filed directly in this parent.
+  // filed directly in this parent. A top-level folder is drawn as a collection
+  // head, so both pages open onto the same kind of row; below it, folders look
+  // like the folders inside a collection.
   function renderFlowChildren(parentId: string | null, depth: number) {
     const folders = (flowFolders || []).filter((f) => (f.parentId || null) === parentId);
+    const top = depth === 0;
     return (
       <>
         {folders.map((f) => (
-          <div className="folder" key={f.id}>
+          <div className={top ? 'collection' : 'folder'} key={f.id}>
             <div
-              className={`folder-head ${dropInto === f.id ? 'drop-into' : ''} `
+              className={`${top ? 'collection-head' : 'folder-head'} ${dropInto === f.id ? 'drop-into' : ''} `
                 + `${dragFolderId === f.id ? 'dragging' : ''}`}
               style={{ paddingLeft: 12 + depth * 14 }}
               onClick={() => setCollapsedFor(f.id, !isCollapsed(f.id))}
@@ -500,9 +503,9 @@ function Sidebar({
               {...flowDropProps(f.id)}
             >
               <span className={`caret ${isCollapsed(f.id) ? '' : 'open'}`}>▸</span>
-              <span className="folder-icon"><IconFolder /></span>
+              {!top && <span className="folder-icon"><IconFolder /></span>}
               <span
-                className="folder-name"
+                className={top ? 'collection-name' : 'folder-name'}
                 title="Click to collapse/expand — drop a flow or folder here to file it, or drag it into another folder"
               >
                 {f.name}
@@ -655,7 +658,7 @@ function Sidebar({
           {page === 'tests' ? (
             <button className="mini bar-act" title="New collection" onClick={() => onNewCollection()}><IconCollection /></button>
           ) : (
-            <button className="mini bar-act" title="New flow folder" onClick={() => onNewFlowFolder(null)}><IconFolder /></button>
+            <button className="mini bar-act" title="New flow folder" onClick={() => onNewFlowFolder(null)}><IconCollection /></button>
           )}
         </span>
       </div>
