@@ -1,15 +1,28 @@
+/* Neutral graphite, lit from above: each step up in --bg-* is a surface that
+   sits closer to you, and the shadows say so. Every tint of the accent is
+   mixed from --accent, so the palette changes here and nowhere else. */
 :root {
-  --bg: #1e1e2e;
-  --bg-2: #252537;
-  --bg-3: #2d2d42;
-  --border: #3a3a52;
-  --text: #e4e4ef;
-  --muted: #9a9ab5;
-  --accent: #7c6cff;
-  --accent-h: #6a58ff;
-  --green: #49c17a;
-  --yellow: #e0b64e;
-  --red: #e0574e;
+  --bg: #0f1011;
+  --bg-2: #17181a;
+  --bg-3: #202124;
+  --border: #2a2c30;
+  --text: #ececef;
+  --muted: #8b8d94;
+  --accent: #3aa99b;
+  --accent-h: #4dbaac;
+  --accent-fill: #23877b;
+  --accent-fill-h: #2a968a;
+  --on-accent: #f2fbf9;
+  --green: #4ade80;
+  --yellow: #f5c451;
+  --red: #f26d6d;
+  --blue: #60a5fa;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --highlight: inset 0 1px 0 rgba(255, 255, 255, .045);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .45);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, .35), 0 8px 24px rgba(0, 0, 0, .3);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, .4), 0 24px 64px rgba(0, 0, 0, .55);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 * { box-sizing: border-box; }
@@ -20,6 +33,7 @@ body {
   font-size: 13px;
   color: var(--text);
   background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
 
 button {
@@ -27,35 +41,54 @@ button {
   font-size: 13px;
   cursor: pointer;
   border: 1px solid var(--border);
-  background: var(--bg-3);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .03), transparent), var(--bg-3);
   color: var(--text);
-  border-radius: 6px;
+  border-radius: 7px;
   padding: 6px 12px;
+  box-shadow: var(--highlight), var(--shadow-sm);
+  transition: background-color .12s, border-color .12s, color .12s, box-shadow .12s, transform .06s;
 }
-button:hover { background: var(--border); }
+button:hover { background-color: #292a2e; border-color: #36383d; }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:focus-visible { outline: none; box-shadow: var(--ring); }
 button:disabled { opacity: .5; cursor: default; }
 
 input, select, textarea {
   font-family: inherit;
   font-size: 13px;
   color: var(--text);
-  background: var(--bg-2);
+  background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 7px;
   padding: 7px 9px;
   outline: none;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .35);
+  transition: border-color .12s, box-shadow .12s;
 }
-input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+input:hover, select:hover, textarea:hover { border-color: #36383d; }
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .35), var(--ring);
+}
+
+input[type=checkbox], input[type=radio] { box-shadow: none; accent-color: var(--accent); }
+.flow-description:focus { box-shadow: none; }
+
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+* { scrollbar-width: thin; scrollbar-color: #33353a transparent; }
 
 .app { display: flex; height: 100vh; overflow: hidden; }
 
 /* ---- Sidebar ---- */
+/* Raised over the workspace: its shadow falls to the right onto the main area. */
 .sidebar {
   flex: 0 0 25%;
   width: 25%;
   min-width: 240px;
-  background: var(--bg-2);
+  background: linear-gradient(180deg, #191a1c, var(--bg-2) 40%);
   border-right: 1px solid var(--border);
+  box-shadow: 6px 0 24px rgba(0, 0, 0, .28);
+  position: relative; z-index: 2;
   display: flex;
   flex-direction: column;
 }
@@ -68,8 +101,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   letter-spacing: .5px;
 }
 .brand-mark {
-  width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto;
-  background: linear-gradient(140deg, var(--accent), var(--green));
+  width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto;
+  background: linear-gradient(140deg, var(--accent-h), var(--accent-fill));
 }
 .brand-name { flex: 1; }
 /* Under the sidebar's title, sharing its side padding. */
@@ -83,13 +116,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
    end of the row. */
 .side-tabs { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
 .side-tabs .tab {
-  flex: 1; border: none; border-radius: 0; background: transparent;
+  flex: 1; border: none; border-radius: 0; background: transparent; box-shadow: none;
   color: var(--muted); padding: 10px; font-weight: 600;
 }
-.side-tabs .tab:hover { color: var(--text); }
+.side-tabs .tab:hover { color: var(--text); background: transparent; }
 .side-tabs .tab.active { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
 .side-tabs .tab.drop-into {
-  background: rgba(124, 108, 255, .16); box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent);
   color: var(--text);
 }
 .side-acts { display: flex; align-items: center; gap: 2px; padding: 0 8px 0 4px; }
@@ -104,13 +137,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   margin: 8px 8px 0; padding: 0 8px; height: 32px;
   background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
 }
-.side-search:focus-within { border-color: var(--accent); }
+.side-search { box-shadow: inset 0 1px 2px rgba(0, 0, 0, .35); transition: border-color .12s, box-shadow .12s; }
+.side-search:focus-within { border-color: var(--accent); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .35), var(--ring); }
 .side-search .search-icon { display: inline-flex; flex: 0 0 auto; color: var(--muted); }
 .side-search input {
   flex: 1; min-width: 0; height: 100%;
-  border: none; background: transparent; padding: 0;
+  border: none; background: transparent; padding: 0; box-shadow: none;
 }
-.side-search input:focus { border: none; }
+.side-search input:focus { border: none; box-shadow: none; }
 .side-search .mini { opacity: .65; }
 .side-search .mini:hover { opacity: 1; }
 .side-search kbd {
@@ -133,7 +167,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 /* Where the arrow keys are, as distinct from the request that is open. */
 .req-item.cursor { background: var(--bg-3); box-shadow: inset 2px 0 0 var(--muted); }
 .req-item.cursor.active { box-shadow: inset 2px 0 0 var(--accent); }
-.search-item mark { background: rgba(124, 108, 255, .3); color: inherit; border-radius: 3px; }
+.search-item mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: inherit; border-radius: 3px; }
 
 .hint { color: var(--muted); padding: 4px 6px; font-size: 12px; }
 .hint code { background: var(--bg-3); padding: 1px 4px; border-radius: 4px; }
@@ -143,7 +177,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .helptip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 5px; }
 .helptip-mark {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 15px; height: 15px; padding: 0; border-radius: 50%;
+  width: 15px; height: 15px; padding: 0; border-radius: 50%; box-shadow: none;
   border: 1px solid var(--border); background: var(--bg-3); color: var(--muted);
   font-size: 10px; font-weight: 600; line-height: 1; text-transform: none; letter-spacing: 0;
 }
@@ -153,8 +187,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .helptip-bubble {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
   width: 300px; padding: 8px 10px; border-radius: 6px;
-  background: var(--bg-2); border: 1px solid var(--border);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+  background: var(--bg-3); border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
   color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.5;
   text-align: left; text-transform: none; letter-spacing: 0; white-space: normal;
   opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s;
@@ -192,16 +226,21 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 6px; }
 .req-item {
   display: flex; align-items: center; gap: 7px;
-  padding: 6px 8px; border-radius: 6px; cursor: pointer;
+  padding: 6px 8px; border-radius: 7px; cursor: pointer;
+  transition: background-color .1s;
 }
-.req-item:hover { background: var(--bg-3); }
-.req-item.active { background: var(--bg-3); box-shadow: inset 2px 0 0 var(--accent); }
+.req-item:hover { background: rgba(255, 255, 255, .04); }
+/* The open one is lifted out of the list, not just coloured in. */
+.req-item.active {
+  background: linear-gradient(90deg, var(--accent-soft), transparent 70%), var(--bg-3);
+  box-shadow: inset 2px 0 0 var(--accent), var(--shadow-sm);
+}
 /* Dragging a flow to file it. The row it came from fades so the tree still
    reads while it is in flight, and the folder it would land in is outlined —
    the drop lands on the whole row, so a border is what says where. */
 .req-item.dragging, .folder-head.dragging, .collection-head.dragging { opacity: .4; }
 .folder-head.drop-into, .collection-head.drop-into {
-  background: rgba(124, 108, 255, .16); box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent);
   color: var(--text);
 }
 .req-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -209,12 +248,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   display: inline-flex; align-items: center; justify-content: center;
   flex: 0 0 auto; width: 20px; height: 20px; padding: 0;
   border: none; border-radius: 5px; background: transparent; color: var(--muted);
-  line-height: 1;
+  line-height: 1; box-shadow: none;
   /* Kept out of the way until the row is hovered, so a collection row reads as
      a name and a count rather than a strip of symbols. */
   opacity: 0; transition: opacity .12s, color .12s, background .12s;
 }
-.mini:hover { color: var(--text); background: var(--border); }
+.mini:hover { color: var(--text); background: rgba(255, 255, 255, .08); }
 .mini.add:hover { color: var(--green); }
 .mini.danger:hover { color: var(--red); }
 .collection-head:hover .mini,
@@ -241,14 +280,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 }
 .tag-GET { color: var(--green); }
 .tag-POST { color: var(--yellow); }
-.tag-PUT, .tag-PATCH { color: #4e9de0; }
+.tag-PUT, .tag-PATCH { color: var(--blue); }
 .tag-DELETE { color: var(--red); }
 .tag-HEAD, .tag-OPTIONS { color: var(--muted); }
 
 /* A test that runs a command rather than sending anything. Neither a method
    colour nor the flow accent: it belongs to the Tests tree but is not an
    endpoint, and the row should say so before it is opened. */
-.tag-SH { color: #4bb8c4; }
+.tag-SH { color: #c4a1ff; }
 
 .tag-FLOW { color: var(--accent); }
 
@@ -275,7 +314,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   flex: 0 0 auto; width: calc(100% - 26px); margin: -6px 0 12px 26px;
   padding: 2px 0; resize: none; overflow-y: auto;
   max-height: calc(1.5em * 6 + 4px);
-  background: transparent; border: none; border-radius: 0;
+  background: transparent; border: none; border-radius: 0; box-shadow: none;
   color: var(--muted); font-size: 12.5px; line-height: 1.5;
 }
 /* The caret sits in the 26px gutter the description is indented by, directly
@@ -284,7 +323,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .flow-desc { position: relative; flex: 0 0 auto; }
 .desc-caret {
   position: absolute; left: 4px; top: 3px; padding: 0;
-  background: none; border: none; color: var(--muted); cursor: pointer;
+  background: none; border: none; color: var(--muted); cursor: pointer; box-shadow: none;
 }
 .desc-caret:hover { color: var(--text); }
 /* Folded: one line, ending in an ellipsis so it is clear something was cut.
@@ -340,9 +379,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 }
 .flow-split > .flow-scroll { padding-right: 4px; }
 .flow-nodes { gap: 16px; }
-.flow-node { cursor: pointer; padding: 8px 10px; }
-.flow-node:hover { border-color: var(--muted); }
-.flow-node.selected { border-color: var(--accent); background: var(--bg-3); }
+.flow-node { cursor: pointer; padding: 8px 10px; transition: border-color .12s, box-shadow .15s, transform .15s; }
+.flow-node:hover { border-color: #3a3c42; box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.flow-node.selected {
+  border-color: var(--accent); background: var(--bg-3);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow-md);
+}
 .flow-node.pass.selected { border-left-color: var(--green); }
 .flow-node.fail.selected { border-left-color: var(--red); }
 .node-name {
@@ -360,18 +402,19 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
    step rather than one. */
 .node-add {
   display: flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 8px 10px; border: 1px dashed var(--border); border-radius: 8px;
-  background: transparent; color: var(--muted); font-size: 12px; cursor: pointer;
+  padding: 8px 10px; border: 1px dashed var(--border); border-radius: 10px;
+  background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; box-shadow: none;
 }
-.node-add:hover { color: var(--text); border-color: var(--accent); }
+.node-add:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 /* The connector down to the next node, hung in the gap between them. */
 .node-link {
   position: absolute; left: 22px; bottom: -17px; width: 2px; height: 16px;
   background: var(--border); pointer-events: none;
 }
 .flow-detail {
-  min-height: 0; overflow-y: auto; padding: 12px;
-  border: 1px solid var(--border); border-radius: 8px; background: var(--bg-2);
+  min-height: 0; overflow-y: auto; padding: 14px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--bg-2);
+  box-shadow: var(--highlight), var(--shadow-md);
 }
 .flow-detail > .node-flags { margin: 6px 0 0 26px; }
 /* The whole url, wrapped: this is where it is read in full. */
@@ -388,8 +431,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   .flow-split { grid-template-columns: 1fr; grid-template-rows: auto auto; }
 }
 .flow-step {
-  border: 1px solid var(--border); border-radius: 8px; padding: 10px;
-  background: var(--bg-2); border-left: 3px solid var(--border);
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .02), transparent), var(--bg-2);
+  border-left: 3px solid var(--border);
+  box-shadow: var(--highlight), var(--shadow-sm);
 }
 .flow-step.pass { border-left-color: var(--green); }
 .flow-step.fail { border-left-color: var(--red); }
@@ -456,7 +501,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .step-summary {
   display: flex; align-items: baseline; gap: 8px; width: 100%;
   margin-top: 6px; padding: 5px 8px;
-  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .3);
   font-size: 12px; color: var(--text);
 }
 .step-summary-lead {
@@ -551,9 +597,19 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .step-response .tab-body { padding-top: 8px; }
 
 /* ---- Main ---- */
-.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.main {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  background:
+    radial-gradient(900px 360px at 75% -120px, rgba(255, 255, 255, .025), transparent),
+    var(--bg);
+}
 
-.request-panel { padding: 14px; border-bottom: 1px solid var(--border); }
+/* The request and what came back: two cards stacked on the workspace. */
+.request-panel, .response-panel {
+  margin: 12px 12px 0; padding: 14px;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--highlight), var(--shadow-md);
+}
 .crumb { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
 .url-effective {
   margin-top: 6px; color: var(--muted); font-size: 12px;
@@ -566,8 +622,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .shell-prompt {
   flex: 0 0 100px; display: flex; align-items: center; justify-content: center;
   font-family: 'SF Mono', Menlo, Consolas, monospace; font-weight: 700;
-  color: #4bb8c4; background: var(--bg-2);
-  border: 1px solid var(--border); border-radius: 6px;
+  color: #c4a1ff; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 7px;
 }
 .shell-command { font-family: 'SF Mono', Menlo, Consolas, monospace; }
 /* The directory and the timeout on one line under the command: a path is as
@@ -616,20 +672,24 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .method { font-weight: 700; min-width: 100px; }
 .method-GET { color: var(--green); }
 .method-POST { color: var(--yellow); }
-.method-PUT, .method-PATCH { color: #4e9de0; }
+.method-PUT, .method-PATCH { color: var(--blue); }
 .method-DELETE { color: var(--red); }
 .url-input { flex: 1; }
 /* The url as where it goes: dressed as the field it turns into on a click,
    in the same mono a flow step's url is shown in. */
 .url-resolved {
-  min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px;
-  background: var(--bg-2); color: var(--text); cursor: text;
+  min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .35); color: var(--text); cursor: text;
   font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .url-resolved:hover { border-color: var(--muted); }
-.btn-send { background: var(--accent); border-color: var(--accent); font-weight: 600; min-width: 72px; }
-.btn-send:hover { background: var(--accent-h); }
+.btn-send {
+  background: var(--accent-fill); border-color: color-mix(in srgb, var(--accent-fill) 80%, #000);
+  color: var(--on-accent); font-weight: 600; min-width: 72px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), var(--shadow-sm);
+}
+.btn-send:hover { background: var(--accent-fill-h); border-color: var(--accent-fill); }
 .btn-cancel {
   background: var(--bg-3); border-color: var(--red); color: var(--red);
   font-weight: 600; min-width: 72px;
@@ -645,30 +705,33 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .app-notice {
   position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 20;
   display: flex; align-items: center; gap: 12px; max-width: 70vw;
-  padding: 8px 12px; border: 1px solid var(--red); border-radius: 6px;
+  padding: 8px 12px; border: 1px solid var(--red); border-radius: 10px;
   background: var(--bg-3); color: var(--red); font-size: 12px; white-space: pre-wrap;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+  box-shadow: var(--shadow-lg);
 }
 .modal-error { color: var(--red); font-size: 12px; margin: 8px 0 0; white-space: pre-wrap; }
 .btn-danger { background: var(--red); border-color: var(--red); color: #fff; }
+.btn-danger:hover { background: #f58585; border-color: #f58585; }
 
 .tabs { display: flex; align-items: center; gap: 4px; margin-top: 14px; border-bottom: 1px solid var(--border); }
 .tabs .spacer { flex: 1; }
 .resp-actions { display: flex; gap: 4px; padding-bottom: 4px; }
 .mini-text {
   padding: 3px 8px; font-size: 12px; color: var(--muted);
-  background: transparent; border: 1px solid var(--border);
+  background: transparent; border: 1px solid var(--border); box-shadow: none;
 }
 .mini-text:hover { color: var(--text); background: var(--bg-3); }
 .binary-note {
   display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
   padding: 16px; color: var(--muted);
-  background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
 }
 .binary-note p { margin: 0; max-width: 60ch; line-height: 1.5; }
 .tabs button {
   border: none; border-radius: 0; background: transparent; color: var(--muted); padding: 8px 12px;
+  box-shadow: none;
 }
+.tabs button:hover { color: var(--text); background: transparent; }
 .tabs button.active { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
 .tab-body { padding-top: 12px; }
 
@@ -700,14 +763,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   position: absolute; inset: 0; z-index: 0;
   overflow: hidden; pointer-events: none;
   color: transparent;
-  background: var(--bg-2);
-  border: 1px solid transparent; border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid transparent; border-radius: 7px;
   padding: 7px 9px;
   font-size: 13px;
   white-space: pre;
 }
 .var-tok { border-radius: 4px; }
-.var-tok.hit { background: rgba(124, 108, 255, .30); box-shadow: 0 0 0 1px rgba(124, 108, 255, .45); }
+.var-tok.hit {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
 .var-tok.miss { background: rgba(224, 87, 78, .25); box-shadow: 0 0 0 1px rgba(224, 87, 78, .40); }
 .kv .var-field { width: 100%; }
 /* A var's value per environment. Wide enough to scroll sideways on its own
@@ -731,8 +797,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   display: flex; gap: 8px; align-items: baseline;
   max-width: 440px;
   padding: 6px 10px;
-  background: var(--bg-3); border: 1px solid var(--border); border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+  background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: var(--shadow-lg);
   font-size: 12px;
 }
 .var-tip-name { color: var(--accent); font-family: 'SF Mono', Menlo, Consolas, monospace; font-weight: 700; }
@@ -744,7 +810,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 }
 .var-chip {
   padding: 3px 10px; border-radius: 999px; font-size: 12px;
-  color: var(--accent); border-style: dashed;
+  color: var(--accent); border-style: dashed; background: transparent; box-shadow: none;
 }
 .var-chip:hover { color: var(--text); border-style: solid; }
 
@@ -755,13 +821,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 }
 .body-variants .variant.active {
   color: var(--text); border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg-3));
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-3));
 }
 .variant-del { color: var(--muted); font-size: 14px; line-height: 1; }
 .variant-del:hover { color: var(--red); }
 .body-variants .variant-add {
   padding: 4px 10px; border-radius: 999px; font-size: 12px; color: var(--muted);
-  border-style: dashed;
+  border-style: dashed; background: transparent; box-shadow: none;
 }
 .body-variants .variant-add:hover { color: var(--text); }
 .body-variants .format-btn { margin-left: auto; }
@@ -782,7 +848,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .script-result.err { color: var(--red); background: rgba(224, 87, 78, .12); }
 
 /* ---- Response ---- */
-.response-panel { flex: 1; display: flex; flex-direction: column; padding: 14px; overflow: hidden; }
+.response-panel { flex: 1; display: flex; flex-direction: column; margin-bottom: 12px; overflow: hidden; }
 /* Constrain the tab content so the body/headers scroll instead of being clipped. */
 .response-panel .tab-body {
   flex: 1; min-height: 0;
@@ -806,12 +872,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 
 /* ---- Modal ---- */
 .modal-backdrop {
-  position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  position: fixed; inset: 0; background: rgba(0, 0, 0, .55);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center; z-index: 50;
 }
 .modal {
-  background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px;
+  background: linear-gradient(180deg, #1c1d20, var(--bg-2) 120px);
+  border: 1px solid #33353a; border-radius: 14px;
   padding: 20px; width: 520px; max-width: 90vw; max-height: 85vh; overflow: auto;
+  box-shadow: var(--highlight), var(--shadow-lg);
 }
 .modal h3 { margin: 0 0 12px; }
 /* Editing a step carries four-column assert rows and a script box — 520px is
@@ -827,12 +896,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
    the dialog asks for, so it reads better as one row than as a dropdown. */
 .modal-modes { display: flex; gap: 6px; margin-bottom: 8px; }
 .modal-modes button {
-  flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
+  flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px;
   background: var(--bg-3); color: var(--muted);
 }
 .modal-modes button:hover { color: var(--text); border-color: var(--accent); }
 .modal-modes button.active {
-  background: var(--accent); border-color: var(--accent); color: #fff;
+  background: var(--accent-soft); border-color: var(--accent); color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 /* Picking what an export/import carries: the whole row is the hit target, and
@@ -976,11 +1046,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
    the editor's, themed in code/theme.ts from the same variables. */
 .code-view, .code-editor {
   display: flex; flex-direction: column; min-height: 0;
-  border: 1px solid var(--border); border-radius: 6px; background: var(--bg-2);
-  overflow: hidden;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .35);
+  overflow: hidden; transition: border-color .12s, box-shadow .12s;
 }
 .code-view > .cm-editor, .code-editor > .cm-editor { flex: 1; min-height: 0; }
-.code-editor:focus-within { border-color: var(--accent); }
+.code-editor:focus-within { border-color: var(--accent); box-shadow: inset 0 1px 3px rgba(0, 0, 0, .35), var(--ring); }
 /* A response body fills what the panel has left; a command's streams take
    what they need, up to most of the screen. */
 .resp-code { flex: 1; }

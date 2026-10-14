@@ -26,11 +26,11 @@ export const appTheme = EditorView.theme({
   },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--text)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground': {
-    backgroundColor: 'rgba(124, 108, 255, .28)',
+    backgroundColor: 'color-mix(in srgb, var(--accent) 26%, transparent)',
   },
   '.cm-selectionMatch': { backgroundColor: 'rgba(224, 182, 78, .18)' },
   '&.cm-focused .cm-matchingBracket, .cm-matchingBracket': {
-    backgroundColor: 'rgba(124, 108, 255, .25)', outline: 'none',
+    backgroundColor: 'color-mix(in srgb, var(--accent) 24%, transparent)', outline: 'none',
   },
   '.cm-placeholder': { color: 'var(--muted)', opacity: '.6' },
   // The search panel, sized like the rest of the app's small controls rather
@@ -49,8 +49,8 @@ export const appTheme = EditorView.theme({
   '.cm-searchMatch': { backgroundColor: 'rgba(224, 182, 78, .3)' },
   '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: 'rgba(224, 182, 78, .55)' },
   '.cm-tooltip': {
-    background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: '6px',
-    color: 'var(--text)', boxShadow: '0 4px 16px rgba(0, 0, 0, .4)',
+    background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: '8px',
+    color: 'var(--text)', boxShadow: 'var(--shadow-lg)',
   },
   '.cm-tooltip.cm-var-tip': {
     display: 'flex', gap: '8px', alignItems: 'baseline', maxWidth: '440px',
@@ -58,7 +58,10 @@ export const appTheme = EditorView.theme({
   },
   // {{var}} tokens: the same pills VarField paints under an input.
   '.cm-var': { borderRadius: '4px' },
-  '.cm-var-hit': { background: 'rgba(124, 108, 255, .30)', boxShadow: '0 0 0 1px rgba(124, 108, 255, .45)' },
+  '.cm-var-hit': {
+    background: 'color-mix(in srgb, var(--accent) 22%, transparent)',
+    boxShadow: '0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent)',
+  },
   '.cm-var-miss': { background: 'rgba(224, 87, 78, .25)', boxShadow: '0 0 0 1px rgba(224, 87, 78, .40)' },
 }, { dark: true });
 
