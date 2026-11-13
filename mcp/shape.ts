@@ -6,9 +6,70 @@ import { z } from 'zod';
 import { api } from './api.ts';
 import { newId } from '../server/ids.ts';
 import type {
-  Auth, Collection, Environment, Flow, Folder, HttpRequest, HttpResponse, InlineRequest,
+  Auth, Collection, Environment, Flow, Folder, FormRow, HttpRequest, HttpResponse, InlineRequest,
   RequestBody, Row, SavedRequest, ShellResponse,
 } from '../server/types.ts';
+
+// ---- multipart/form-data fields ----
+// One field as a tool call writes it: a text value, a file on this machine to
+// upload, or file_id to keep an upload already stored (as get_request reports
+// it), so a request can be re-saved without reading its files again.
+export const formFieldIn = z.object({
+  key: z.string(),
+  value: z.string().optional(),
+  file: z.string().optional(),
+  file_id: z.string().optional(),
+  enabled: z.boolean().optional(),
+});
+export type FormFieldIn = z.infer<typeof formFieldIn>;
+
+// The stored rows, files uploaded first. `prev` is the request's current form,
+// where a file_id's name and size are found.
+export async function formFromMcp(
+  fields: FormFieldIn[],
+  prev: FormRow[] | undefined,
+  { trailingBlank = false }: { trailingBlank?: boolean } = {},
+): Promise<FormRow[]> {
+  const rows: FormRow[] = [];
+  for (const f of fields) {
+    const given = [f.value !== undefined, f.file !== undefined, f.file_id !== undefined]
+      .filter(Boolean).length;
+    if (given > 1) {
+      throw new Error(`Form field "${f.key}": pass one of value, file or file_id, not several.`);
+    }
+    const enabled = f.enabled !== false;
+    if (f.file !== undefined) {
+      const meta = await api.uploadFile(f.file);
+      rows.push({
+        key: f.key, type: 'file', enabled, fileId: meta.id, fileName: meta.name, fileSize: meta.size,
+      });
+    } else if (f.file_id !== undefined) {
+      const was = (prev || []).find((r) => r.type === 'file' && r.fileId === f.file_id);
+      rows.push({
+        key: f.key, type: 'file', enabled, fileId: f.file_id,
+        ...(was && was.type === 'file' ? { fileName: was.fileName, fileSize: was.fileSize } : {}),
+      });
+    } else {
+      rows.push({ key: f.key, type: 'text', value: f.value || '', enabled });
+    }
+  }
+  if (trailingBlank) rows.push({ key: '', type: 'text', value: '', enabled: true });
+  return rows;
+}
+
+// The stored rows the way formFromMcp takes them, plus what a file row names,
+// so get_request's output can be edited and passed back.
+export function formOut(rows: FormRow[] | undefined) {
+  return (rows || []).filter((r) => r.key).map((r) => (r.type === 'file'
+    ? {
+      key: r.key,
+      ...(r.fileId ? { file_id: r.fileId } : {}),
+      ...(r.fileName ? { file_name: r.fileName, file_size: r.fileSize } : {}),
+      ...(!r.fileId ? { missing_file: r.fileHint ? `was ${r.fileHint} — pass file to attach it` : true } : {}),
+      ...(r.enabled === false ? { enabled: false } : {}),
+    }
+    : { key: r.key, value: r.value, ...(r.enabled === false ? { enabled: false } : {}) }));
+}
 
 // ---- display helpers ----
 // Nothing here decides what gets sent. Every tool that sends something posts to
