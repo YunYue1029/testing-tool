@@ -7,10 +7,26 @@
 // this client speaks that API, and a second definition of Collection would only
 // be a second thing to keep in step. `import type` is erased outright, so
 // nothing is loaded across the package boundary at run time.
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import type {
-  Collection, CollectionInput, Environment, EnvironmentInput, Flow, FlowInput,
+  Collection, CollectionInput, Environment, EnvironmentInput, FileMeta, Flow, FlowInput,
   FlowReport, Folder, HttpRunResult, Overrides, SavedRequest, ShellRunResult, Vars,
 } from '../server/types.ts';
+
+// The Content-Type an upload is stored under, which is the type its form part
+// goes out with. A backend that checks for image/png rejects
+// application/octet-stream, so the common ones are named; anything else stays
+// generic.
+const MIME: Record<string, string> = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf',
+  '.json': 'application/json', '.txt': 'text/plain', '.csv': 'text/csv',
+  '.html': 'text/html', '.xml': 'application/xml', '.zip': 'application/zip',
+  '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
 
 const BASE = (
   process.env.TESTING_TOOL_URL || process.env.API_TEST_URL || 'http://localhost:7620'
@@ -61,6 +77,39 @@ export const api = {
   // here, ad-hoc requests included.
   run: (payload: RunPayload) =>
     request<HttpRunResult | ShellRunResult>('POST', '/api/run', payload),
+
+  // A file on this machine, stored by the backend for a form-data file field —
+  // the same /api/files the app's "Choose file" posts to, raw bytes as the
+  // body. The path is read here, so it is a path on the machine this MCP
+  // server runs on.
+  uploadFile: async (filePath: string): Promise<FileMeta> => {
+    if (!path.isAbsolute(filePath)) {
+      throw new Error(`File path must be absolute: "${filePath}"`);
+    }
+    let bytes: Buffer;
+    try {
+      bytes = await readFile(filePath);
+    } catch (err) {
+      throw new Error(`Cannot read "${filePath}": ${(err as Error).message}`);
+    }
+    if (!bytes.length) throw new Error(`"${filePath}" is empty — the backend refuses an empty upload.`);
+    const name = path.basename(filePath);
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/api/files?name=${encodeURIComponent(name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': MIME[path.extname(name).toLowerCase()] || 'application/octet-stream' },
+        body: new Uint8Array(bytes),
+      });
+    } catch (err) {
+      throw new Error(`Cannot reach the testing-tool backend at ${BASE} (${(err as Error).message}).`);
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      throw new Error(`Upload of "${name}" failed: ${data.error || `${res.status} ${res.statusText}`}`);
+    }
+    return await res.json() as FileMeta;
+  },
 
   listCollections: () => request<Collection[]>('GET', '/api/collections'),
   getCollection: (id: string) =>

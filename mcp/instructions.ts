@@ -157,9 +157,15 @@ Rules:
   before writing it, so two parallel saves of the same request_id lose
   whichever landed first. Saves of different requests, and create_folder, are
   safe alongside each other — each is merged into the collection under a lock.
-- Multipart/file bodies can't be created or edited here (body types: none,
-  json, text) — a request already using one keeps it through save_request;
-  its fields are edited in the app. A body is only sent when body_type is json
+- Multipart/file uploads: save_request and send_request take form, a list of
+  {key, value} text fields and {key, file} file fields, file being an
+  absolute path on the machine this MCP server runs on — it is uploaded to
+  the backend, and the saved request keeps the upload, so later runs need
+  the path no more. form implies body_type form and replaces the fields
+  whole; get_request lists them with each file's file_id, and {key, file_id}
+  keeps an upload without reading the file again. Omitting form keeps the
+  fields already saved. Flow inline steps take no form: a flow uploads
+  through a saved step. A json/text body is only sent when body_type is json
   or text, however many variants are stored.
 - Deletes are permanent — there is no undo. A flow step pointing at a deleted
   request or collection stays in its flow and fails as missing when run; the
