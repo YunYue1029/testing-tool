@@ -119,8 +119,9 @@ Where a {{var}} should live (most specific wins at run time):
 - flow vars (save_flow vars): the flow's own inputs, e.g. {"project_id":"10"}
   for a flow that reuses an existing project. They start the run: over the
   environment and a saved request's own values, under anything a step captures.
-- environment (set_env_var): shared across requests — base_url, token, a
-  fixture id every call in a suite uses.
+- environment (set_env_var for one value; save_environment to create, rename,
+  remove variables, disable keys or mark the default): shared across requests —
+  base_url, token, a fixture id every call in a suite uses.
 - A request's or flow's var is one value (the default environment's) or
   {"default":"11","remote90":"96"} where environments differ; an environment
   with no value of its own uses the default.

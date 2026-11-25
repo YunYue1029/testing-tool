@@ -155,6 +155,7 @@ export const api = {
     request<{ folders: Folder[]; deletedFlows: string[] }>('DELETE', `/api/flow-folders/${encodeURIComponent(id)}`),
 
   listEnvironments: () => request<Environment[]>('GET', '/api/environments'),
+  createEnvironment: (e: EnvironmentInput) => request<Environment>('POST', '/api/environments', e),
   updateEnvironment: (id: string, e: EnvironmentInput) =>
     request<Environment>('PUT', `/api/environments/${encodeURIComponent(id)}`, e),
   deleteEnvironment: (id: string) =>
