@@ -6,7 +6,8 @@ import { newId } from '../../server/ids.ts';
 import { requestAuthType } from '../../server/resolve.ts';
 import type { Auth, HttpRequest, ShellRequest } from '../../server/types.ts';
 import {
-  authIn, bodyVariants, findVariant, guessBodyType, httpRequestIn, requireCollection,
+  authIn, bodyVariants, findVariant, formFieldIn, formFromMcp, formOut, guessBodyType,
+  httpRequestIn, requireCollection,
   requireEnv, requireFolder, requireRequest, requireVariant, rowsToPlainObject, shapeResponse,
   toRows, variantReport, varsOut, varsToRows, varValue,
 } from '../shape.ts';
@@ -54,6 +55,9 @@ export function register(tool: Tool): void {
       // active one, and what else is stored beside it.
       body_name: body ? body.name : null,
       body: body ? body.content : '',
+      // Kept whatever the type, since switching back to form brings them back;
+      // only sent when body_type is form.
+      ...((r.form || []).some((f) => f.key) ? { form: formOut(r.form) } : {}),
       ...(bodies.length > 1
         ? { body_variants: bodies.map((b) => ({ name: b.name, active: b.id === activeId })) }
         : {}),
@@ -72,16 +76,19 @@ export function register(tool: Tool): void {
     title: 'Send an HTTP request',
     description:
       'Send an ad-hoc HTTP request through the backend, {{vars}} resolved from environment; ' +
-      'body_type is guessed from the body. max_body_chars raises the body cap.',
+      'body_type is guessed from the body; form sends multipart/form-data instead (file: an ' +
+      'absolute path on this machine). max_body_chars raises the body cap.',
     inputSchema: {
       method: z.string(),
       url: z.string(),
       headers: z.record(z.string(), z.string()).optional(),
       body: z.string().optional(),
+      form: z.array(formFieldIn).optional(),
       environment: z.string().optional(),
       max_body_chars: z.number().int().positive().optional(),
     },
-  }, async ({ method, url, headers, body, environment, max_body_chars }) => {
+  }, async ({ method, url, headers, body, form, environment, max_body_chars }) => {
+    if (form && body !== undefined) throw new Error('Pass either body or form, not both.');
     if (environment) await requireEnv(environment);
     // Handed to the backend unresolved, as a request that simply isn't filed
     // anywhere: it substitutes {{vars}} and sets Content-Type for a JSON body,
@@ -95,8 +102,9 @@ export function register(tool: Tool): void {
       url,
       params: [],
       headers: toRows(headers),
-      bodyType: guessBodyType(body),
+      bodyType: form ? 'form' : guessBodyType(body),
       bodies: [{ id: newId(), name: 'Default', content: body == null ? '' : body }],
+      ...(form ? { form: await formFromMcp(form, undefined) } : {}),
       script: '',
     };
     record.activeBodyId = record.bodies![0]!.id;
@@ -165,10 +173,12 @@ export function register(tool: Tool): void {
     title: 'Save a request',
     description:
       'Add (no request_id) or update (request_id) an endpoint: name, method, url, headers, params, ' +
-      'body_type, body, folder_id, vars, auth, script. On update every omitted field keeps its ' +
-      'value, including the form-data fields and extra body variants this schema cannot express; ' +
-      'pass {} to clear headers/params/vars. See the instructions for {{dy_url}}, vars, auth and ' +
-      'script.',
+      'body_type, body, form, folder_id, vars, auth, script. form is the multipart/form-data ' +
+      'fields, replaced whole: {key, value} for text, {key, file} to upload an absolute path on ' +
+      'this machine, {key, file_id} to keep an upload get_request reported; it implies ' +
+      'body_type form. On update every omitted field keeps its value, extra body variants ' +
+      'included; pass {} to clear headers/params/vars. See the instructions for {{dy_url}}, ' +
+      'vars, auth and script.',
     inputSchema: {
       collection_id: z.string(),
       request: z.object({
@@ -178,8 +188,9 @@ export function register(tool: Tool): void {
         url: z.string(),
         headers: z.record(z.string(), z.string()).optional(),
         params: z.record(z.string(), z.string()).optional(),
-        body_type: z.enum(['none', 'json', 'text']).optional(),
+        body_type: z.enum(['none', 'json', 'text', 'form']).optional(),
         body: z.string().optional(),
+        form: z.array(formFieldIn).optional(),
         folder_id: z.string().optional(),
         vars: z.record(z.string(), varValue).optional(),
         auth: authIn.optional(),
@@ -207,9 +218,18 @@ export function register(tool: Tool): void {
     }
 
     // An update carries over everything the caller didn't pass. This schema
-    // models neither form-data fields (with their uploaded files) nor extra
-    // body variants, so rebuilding the record from scratch would silently
-    // destroy them — as omitting folder_id already avoids doing.
+    // models no extra body variants, and omitting form keeps the fields (with
+    // their uploaded files) already there, so rebuilding the record from
+    // scratch would silently destroy them — as omitting folder_id already
+    // avoids doing.
+    if (request.form && request.body_type && request.body_type !== 'form') {
+      throw new Error(`form is sent only with body_type form, not ${request.body_type}.`);
+    }
+    // Uploaded before anything is written, so an unreadable path leaves the
+    // stored request as it was.
+    const form = request.form
+      ? await formFromMcp(request.form, prev ? prev.form : undefined, { trailingBlank: true })
+      : undefined;
 
     // Body edits replace the active variant's content; the others survive.
     let bodies = prev && Array.isArray(prev.bodies) && prev.bodies.length
@@ -233,7 +253,9 @@ export function register(tool: Tool): void {
       headers: request.headers !== undefined ? rows(request.headers) : (prev ? prev.headers : rows()),
       // A new request with a body but no body_type takes the type the body
       // implies — stored as 'none', the body would never be sent.
-      bodyType: request.body_type || (prev ? prev.bodyType || 'none' : guessBodyType(request.body)),
+      bodyType: request.body_type
+        || (form ? 'form' : (prev ? prev.bodyType || 'none' : guessBodyType(request.body))),
+      ...(form ? { form } : {}),
       bodies,
       activeBodyId,
       folderId: request.folder_id !== undefined
