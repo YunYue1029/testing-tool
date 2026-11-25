@@ -1,7 +1,9 @@
 import {
-  maskDetail, maskHeaders, maskJsonBody, maskUrl, reportVars, scrubber, secretValues,
+  maskDetail, maskHeaders, maskJsonBody, maskUrl, previewBody, quietHeaders, reportVars,
+  scrubber, secretValues,
 } from '../report.ts';
 import { fmtSize, prettify } from '../util.ts';
+import type { ReportDetail } from '../report.ts';
 import type { Flow, RunReport } from '../types.ts';
 
 // The run, written up for someone who was not at the keyboard: every step's
@@ -23,6 +25,9 @@ interface ReportDocProps {
   // Whether tokens, passwords and cookies are printed as they ran. Off by
   // default — see report.ts.
   reveal: boolean;
+  // `summary`: the flow and each verdict, a failed step's call in short.
+  // `full`: every call in full.
+  detail: ReportDetail;
   // Position the document off-screen and visible, so html2pdf has something to
   // measure. Without it the document stays display:none (print path only).
   capture?: boolean;
@@ -38,7 +43,7 @@ function duration(ms: number | undefined): string {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
-export default function FlowReportDoc({ flow, report, environmentName, reveal, capture }: ReportDocProps) {
+export default function FlowReportDoc({ flow, report, environmentName, reveal, detail, capture }: ReportDocProps) {
   const steps = report.steps || [];
   const skipped = steps.filter((s) => s.skipped);
   const ran = steps.filter((s) => !s.skipped);
@@ -90,6 +95,25 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal, c
 
       {steps.length === 0 && <p className="pr-empty">This flow has no steps.</p>}
 
+      {steps.length > 0 && (
+        <table className="pr-overview">
+          <tbody>
+            {steps.map((s, i) => (
+              <tr key={s.id || i} className={s.skipped ? 'skip' : s.ok ? 'ok' : 'err'}>
+                <td className="pr-ov-mark">{s.skipped ? '–' : s.ok ? '✓' : '✗'}</td>
+                <td>{i + 1}. {s.name || `Step ${i + 1}`}</td>
+                <td className="pr-ov-what">
+                  {s.skipped ? 'skipped'
+                    : s.mode === 'shell' ? `exit ${s.exitCode ?? '—'}`
+                      : `${s.request?.method ?? ''} ${s.status ?? ''}`.trim()}
+                </td>
+                <td className="pr-ov-time">{duration(s.timeMs)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
       <ol className="pr-steps">
         {steps.map((s, i) => {
           const shell = s.mode === 'shell';
@@ -99,6 +123,15 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal, c
           // step is configured to send. On a report they can differ, and the
           // pair that ran is the pair being reported on.
           const req = s.request;
+          // A passed step in a summary is one line; only a step that went wrong
+          // is opened up, and then the call is shortened to what can be read.
+          const full = detail === 'full';
+          const open = full || (!s.ok && !s.skipped);
+          const cut = (t: string) => (full ? t : previewBody(t));
+          const heads = (h: Record<string, string> | undefined) => {
+            const rows = maskHeaders(h, reveal);
+            return full ? rows : quietHeaders(rows);
+          };
           const reqBody = req?.body
             ? maskJsonBody(prettify(req.body), reveal) : '';
           const res = s.response;
@@ -116,7 +149,14 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal, c
                 ? <div className="pr-step-note">Skipped — {s.skipped}</div>
                 : (
                   <>
-                    {shell ? (
+                    {!open && (shell
+                      ? <div className="pr-step-what">$ {scrub(s.command || '')}</div>
+                      : req && (
+                        <div className="pr-step-what">
+                          {req.method} {scrub(maskUrl(req.url, reveal))}
+                        </div>
+                      ))}
+                    {open && (shell ? (
                       <div className="pr-io">
                         <div className="pr-io-label">Ran</div>
                         <div className="pr-step-what">$ {scrub(s.command || '')}</div>
@@ -131,16 +171,16 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal, c
                         <div className="pr-step-what">
                           {req.method} {scrub(maskUrl(req.url, reveal))}
                         </div>
-                        {Object.keys(req.headers || {}).length > 0 && (
+                        {heads(req.headers).length > 0 && (
                           <table className="pr-io-kv">
                             <tbody>
-                              {maskHeaders(req.headers, reveal).map(([k, v]) => (
+                              {heads(req.headers).map(([k, v]) => (
                                 <tr key={k}><th>{k}</th><td>{scrub(v)}</td></tr>
                               ))}
                             </tbody>
                           </table>
                         )}
-                        {reqBody && <pre className="pr-io-body">{scrub(reqBody)}</pre>}
+                        {reqBody && <pre className="pr-io-body">{scrub(cut(reqBody))}</pre>}
                         {req.bodyTruncated && (
                           <div className="pr-step-note">Sent body truncated for the report.</div>
                         )}
@@ -157,14 +197,14 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal, c
                           </table>
                         )}
                       </div>
-                    )}
+                    ))}
                     <div className="pr-step-facts">
                       {shell
                         ? <>exit code {s.exitCode ?? '—'}</>
                         : s.status != null && <>{s.status} {s.statusText}</>}
                       {s.timeMs != null && <span className="pr-dot"> · {duration(s.timeMs)}</span>}
                     </div>
-                    {shell ? (
+                    {open && (shell ? (
                       s.shell && (
                         <div className="pr-io">
                           <div className="pr-io-label">Output</div>
@@ -174,7 +214,7 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal, c
                             </div>
                           )}
                           {s.shell.stdout
-                            ? <pre className="pr-io-body">{scrub(s.shell.stdout)}</pre>
+                            ? <pre className="pr-io-body">{scrub(cut(s.shell.stdout))}</pre>
                             : <div className="pr-step-note">No output on stdout.</div>}
                           {s.shell.stderr && (
                             <pre className="pr-io-body pr-io-stderr">{scrub(s.shell.stderr)}</pre>
@@ -187,10 +227,10 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal, c
                     ) : res && (
                       <div className="pr-io">
                         <div className="pr-io-label">Response</div>
-                        {Object.keys(res.headers || {}).length > 0 && (
+                        {heads(res.headers).length > 0 && (
                           <table className="pr-io-kv">
                             <tbody>
-                              {maskHeaders(res.headers, reveal).map(([k, v]) => (
+                              {heads(res.headers).map(([k, v]) => (
                                 <tr key={k}><th>{k}</th><td>{scrub(v)}</td></tr>
                               ))}
                             </tbody>
@@ -202,14 +242,14 @@ export default function FlowReportDoc({ flow, report, environmentName, reveal, c
                           </div>
                         ) : (
                           <>
-                            <pre className="pr-io-body">{scrub(resBody) || '(empty body)'}</pre>
+                            <pre className="pr-io-body">{scrub(cut(resBody)) || '(empty body)'}</pre>
                             {res.truncated && (
                               <div className="pr-step-note">Body truncated for the report.</div>
                             )}
                           </>
                         )}
                       </div>
-                    )}
+                    ))}
                     {s.error && (
                       <div className="pr-step-note pr-error">
                         {scrub(s.error)}{s.hint ? ` — ${scrub(s.hint)}` : ''}

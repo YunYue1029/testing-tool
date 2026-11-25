@@ -982,6 +982,12 @@ input[type=checkbox], input[type=radio] { box-shadow: none; accent-color: var(--
 .print-report .pr-error { color: #000; font-weight: 600; }
 .print-report .pr-empty { color: #555; }
 
+.print-report .pr-overview { border-collapse: collapse; width: 100%; font-size: 10.5pt; margin-bottom: 12pt; }
+.print-report .pr-overview td { padding: 2pt 6pt; border-bottom: .5pt solid #ddd; }
+.print-report .pr-overview tr.skip { color: #666; }
+.print-report .pr-overview tr.err { font-weight: 700; }
+.print-report .pr-ov-mark { width: 14pt; font-weight: 700; }
+.print-report .pr-ov-what, .print-report .pr-ov-time { text-align: right; white-space: nowrap; color: #333; }
 .print-report .pr-steps { list-style: none; margin: 0; padding: 0; }
 /* A step is read as a unit, so it is not split across a page boundary. */
 .print-report .pr-step { break-inside: avoid; padding: 8pt 0 8pt 22pt; border-bottom: .5pt solid #bbb; position: relative; }
@@ -1063,3 +1069,5 @@ input[type=checkbox], input[type=radio] { box-shadow: none; accent-color: var(--
 /* Editors grow with what is typed, from a few lines to most of the screen. */
 .body-code > .cm-editor, .script-code > .cm-editor { min-height: 160px; max-height: 60vh; }
 .step-body-code > .cm-editor { min-height: 70px; max-height: 40vh; }
+
+.report-detail { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 12px; }

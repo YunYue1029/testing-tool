@@ -8,6 +8,7 @@ import AddStepModal from './AddStepModal.tsx';
 import StepEditModal from './StepEditModal.tsx';
 import FlowReportModal from './FlowReportModal.tsx';
 import FlowReportDoc from './FlowReportDoc.tsx';
+import type { ReportDetail } from '../report.ts';
 import FlowSettingsModal from './FlowSettingsModal.tsx';
 import {
   newId, prettify, isJsonText, fmtSize, emptyInlineRequest, flowUsedVarNames,
@@ -252,7 +253,7 @@ export default function FlowPanel({
   // that straight into the browser's downloads. No print dialog, no filename to
   // type, no folder to choose.
   const [exporting, setExporting] = useState(false);
-  const [capturing, setCapturing] = useState<{ reveal: boolean } | null>(null);
+  const [capturing, setCapturing] = useState<{ reveal: boolean; detail: ReportDetail } | null>(null);
   // From an effect, not the click: the portal mounts the document this render,
   // and html2pdf can only read it once it is actually in the page.
   useEffect(() => {
@@ -637,7 +638,7 @@ export default function FlowPanel({
         <FlowReportModal
           flowName={flow.name}
           onCancel={() => setExporting(false)}
-          onExport={(reveal) => { setExporting(false); setCapturing({ reveal }); }}
+          onExport={(reveal, detail) => { setExporting(false); setCapturing({ reveal, detail }); }}
         />
       )}
 
@@ -651,6 +652,7 @@ export default function FlowPanel({
             report={report}
             environmentName={environmentName}
             reveal={capturing.reveal}
+            detail={capturing.detail}
             capture
           />
         </div>,

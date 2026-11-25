@@ -108,3 +108,32 @@ export function scrubber(values: string[]): (text: string) => string {
   const ordered = [...values].sort((a, b) => b.length - a.length);
   return (text) => ordered.reduce((t, v) => t.split(v).join(MASK), text);
 }
+
+// How much of each call the report writes down. `summary` is the flow and its
+// verdicts: one line per step that passed, and the whole call — shortened to
+// what can be read — only under the steps that did not. `full` is every call
+// in full, as it ran.
+export type ReportDetail = 'summary' | 'full';
+
+// Headers every response carries and nobody reads on paper.
+const NOISE_HEADERS = /^(date|server|etag|vary|connection|keep-alive|content-length|content-encoding|transfer-encoding|accept-ranges|cache-control|x-powered-by|x-request-id|x-content-type-options|x-frame-options|strict-transport-security|access-control-.*|user-agent|accept|accept-encoding|accept-language|host)$/i;
+
+export function quietHeaders(rows: Array<[string, string]>): Array<[string, string]> {
+  return rows.filter(([k]) => !NOISE_HEADERS.test(k));
+}
+
+// A body cut down to what a person reads on a page: markup and long runs
+// without a space (a JWT, base64) are named rather than printed, and the rest
+// stops after a few lines.
+export function previewBody(body: string, maxLines = 14, maxChars = 800): string {
+  if (!body) return body;
+  if (/^\s*<(!doctype|html|\?xml)/i.test(body)) {
+    return `(${/xml/i.test(body.slice(0, 12)) ? 'XML' : 'HTML'} document, ${body.length} characters — not printed)`;
+  }
+  const squeezed = body.replace(/"([^"\s]{80,})"/g, (_, s: string) => `"${s.slice(0, 24)}…(${s.length} chars)"`);
+  const lines = squeezed.split('\n');
+  let out = lines.slice(0, maxLines).join('\n');
+  let cut = lines.length > maxLines;
+  if (out.length > maxChars) { out = out.slice(0, maxChars); cut = true; }
+  return cut ? `${out}\n… (${body.length} characters in all, shortened)` : out;
+}

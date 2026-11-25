@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import HelpTip from './HelpTip.tsx';
+import type { ReportDetail } from '../report.ts';
 
 // Turning the last run into something you can send someone. Answering the one
 // question here — whether the secrets the run used are written into the file —
@@ -7,12 +8,13 @@ import HelpTip from './HelpTip.tsx';
 // filename to type, no folder to pick.
 interface FlowReportModalProps {
   flowName: string;
-  onExport: (reveal: boolean) => void;
+  onExport: (reveal: boolean, detail: ReportDetail) => void;
   onCancel: () => void;
 }
 
 export default function FlowReportModal({ flowName, onExport, onCancel }: FlowReportModalProps) {
   const [reveal, setReveal] = useState(false);
+  const [detail, setDetail] = useState<ReportDetail>('summary');
 
   return (
     <div className="modal-backdrop">
@@ -31,6 +33,17 @@ export default function FlowReportModal({ flowName, onExport, onCancel }: FlowRe
           came back.
         </p>
 
+        <div className="report-detail">
+          <label>
+            <input type="radio" checked={detail === 'summary'} onChange={() => setDetail('summary')} />
+            {' '}Summary — the flow and each step's result; only failed steps show their call
+          </label>
+          <label>
+            <input type="radio" checked={detail === 'full'} onChange={() => setDetail('full')} />
+            {' '}Full — every step's request and response in full
+          </label>
+        </div>
+
         <label className="report-secrets" title="Bearer tokens, passwords, cookies and anything captured under a name like token or secret">
           <input
             type="checkbox"
@@ -47,7 +60,7 @@ export default function FlowReportModal({ flowName, onExport, onCancel }: FlowRe
         <div className="modal-actions">
           <span className="spacer" />
           <button className="btn-secondary" onClick={onCancel}>Cancel</button>
-          <button className="btn-send" onClick={() => onExport(reveal)}>Download PDF</button>
+          <button className="btn-send" onClick={() => onExport(reveal, detail)}>Download PDF</button>
         </div>
       </div>
     </div>
